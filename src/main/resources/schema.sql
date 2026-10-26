@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS trips
 (
     id        BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id   BIGINT      NOT NULL REFERENCES users (id),
+    name      VARCHAR(100) NOT NULL,
     status    VARCHAR(20) NOT NULL,
     day_count INTEGER     NOT NULL
 );

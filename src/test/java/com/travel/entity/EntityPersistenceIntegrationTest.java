@@ -45,6 +45,7 @@ class EntityPersistenceIntegrationTest {
 
         Trip trip = new Trip();
         trip.setUser(user);
+        trip.setName("Tianjin Weekend");
         trip.setStatus("Planning");
         trip.setDayCount(2);
         entityManager.persist(trip);
@@ -92,6 +93,7 @@ class EntityPersistenceIntegrationTest {
         assertEquals(userId, savedResetToken.getUser().getId());
         assertEquals(googlePlaceId, savedPoi.getGooglePlaceId());
         assertEquals(userId, savedWishlist.getUser().getId());
+        assertEquals("Tianjin Weekend", savedTrip.getName());
         assertEquals("Planning", savedTrip.getStatus());
         assertEquals(poiId, savedTripPoi.getPoi().getId());
         assertEquals(1200, savedTripLeg.getDistanceMeters());
@@ -104,8 +106,9 @@ class EntityPersistenceIntegrationTest {
         System.out.printf("pois: id=%d, google_place_id=%s%n", savedPoi.getId(), savedPoi.getGooglePlaceId());
         System.out.printf("wishlist: id=%d, user_id=%d, poi_id=%d%n",
                 savedWishlist.getId(), savedWishlist.getUser().getId(), savedWishlist.getPoi().getId());
-        System.out.printf("trips: id=%d, user_id=%d, status=%s, day_count=%d%n",
-                savedTrip.getId(), savedTrip.getUser().getId(), savedTrip.getStatus(), savedTrip.getDayCount());
+        System.out.printf("trips: id=%d, user_id=%d, name=%s, status=%s, day_count=%d%n",
+                savedTrip.getId(), savedTrip.getUser().getId(), savedTrip.getName(),
+                savedTrip.getStatus(), savedTrip.getDayCount());
         System.out.printf("trip_pois: id=%d, trip_id=%d, poi_id=%d, day=%d, sequence=%d, status=%s%n",
                 savedTripPoi.getId(), savedTripPoi.getTrip().getId(), savedTripPoi.getPoi().getId(),
                 savedTripPoi.getDayNumber(), savedTripPoi.getSequence(), savedTripPoi.getStatus());
