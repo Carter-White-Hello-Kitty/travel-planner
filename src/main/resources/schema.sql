@@ -17,16 +17,7 @@ CREATE TABLE IF NOT EXISTS pwd_reset_tokens
 CREATE TABLE IF NOT EXISTS pois
 (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
-    google_place_id VARCHAR(225) NOT NULL UNIQUE,
-    name            VARCHAR(225) NOT NULL,
-    address         TEXT,
-    latitude        DOUBLE       NOT NULL,
-    longitude       DOUBLE       NOT NULL,
-    category        VARCHAR(100),
-    rating          DOUBLE,
-    CHECK (latitude BETWEEN -90 AND 90),
-    CHECK (longitude BETWEEN -180 AND 180),
-    CHECK (rating IS NULL OR rating BETWEEN 0 AND 5)
+    google_place_id VARCHAR(225) NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS wishlist
