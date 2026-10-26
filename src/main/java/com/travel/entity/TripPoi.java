@@ -9,20 +9,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
 @Entity
-@Table(
-        name = "trip_pois",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uq_trip_pois_day_sequence",
-                columnNames = {"trip_id", "day_number", "sequence"}
-        )
-)
+@Table(name = "trip_pois")
 public class TripPoi {
 
     @Id
@@ -30,17 +23,14 @@ public class TripPoi {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "trip_id", nullable = false)
-    private Trip trip;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "poi_id", nullable = false)
     private Poi poi;
 
-    @Column(name = "day_number", nullable = false)
-    private Integer dayNumber;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "trip_day_id", nullable = false)
+    private TripDay tripDay;
 
-    @Column(name = "`sequence`", nullable = false)
+    @Column(name = "sequence", nullable = false)
     private Integer sequence;
 
     @Column(nullable = false, length = 20)

@@ -1,6 +1,13 @@
 package com.travel.entity;
 
-import jakarta.persistence.EntityManager;
+import com.travel.repositories.PoiRepository;
+import com.travel.repositories.PwdResetTokenRepository;
+import com.travel.repositories.TravelPostRepository;
+import com.travel.repositories.TripDayRepository;
+import com.travel.repositories.TripPoiRepository;
+import com.travel.repositories.TripRepository;
+import com.travel.repositories.UserRepository;
+import com.travel.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,89 +24,93 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class EntityPersistenceIntegrationTest {
 
     @Autowired
-    private EntityManager entityManager;
+    private UserRepository userRepository;
+
+    @Autowired
+    private PwdResetTokenRepository pwdResetTokenRepository;
+
+    @Autowired
+    private PoiRepository poiRepository;
+
+    @Autowired
+    private WishlistRepository wishlistRepository;
+
+    @Autowired
+    private TripRepository tripRepository;
+
+    @Autowired
+    private TripDayRepository tripDayRepository;
+
+    @Autowired
+    private TripPoiRepository tripPoiRepository;
+
+    @Autowired
+    private TravelPostRepository travelPostRepository;
 
     @Test
     void persistsAndReadsSampleDataForEveryTable() {
         User user = new User();
         user.setEmail("entity-test-" + UUID.randomUUID() + "@example.com");
         user.setPasswordHash("test-password-hash");
-        entityManager.persist(user);
-        entityManager.flush();
+        user = userRepository.saveAndFlush(user);
 
         PwdResetToken resetToken = new PwdResetToken();
         resetToken.setUser(user);
         resetToken.setTokenHash(UUID.randomUUID().toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", ""));
         resetToken.setExpiresAt(LocalDateTime.now().plusHours(1));
-        entityManager.persist(resetToken);
+        resetToken = pwdResetTokenRepository.saveAndFlush(resetToken);
 
-        Poi firstPoi = createPoi("test-place-" + UUID.randomUUID());
-        Poi secondPoi = createPoi("test-place-" + UUID.randomUUID());
+        Poi firstPoi = poiRepository.saveAndFlush(createPoi("test-place-" + UUID.randomUUID()));
+        Poi secondPoi = poiRepository.saveAndFlush(createPoi("test-place-" + UUID.randomUUID()));
 
         Wishlist wishlist = new Wishlist();
         wishlist.setUser(user);
         wishlist.setPoi(firstPoi);
         wishlist.setCreatedAt(LocalDateTime.now());
-        entityManager.persist(wishlist);
+        wishlist = wishlistRepository.saveAndFlush(wishlist);
 
         Trip trip = new Trip();
         trip.setUser(user);
         trip.setName("Tianjin Weekend");
         trip.setStatus("Planning");
         trip.setDayCount(2);
-        entityManager.persist(trip);
+        trip = tripRepository.saveAndFlush(trip);
 
-        TripPoi firstTripPoi = createTripPoi(trip, firstPoi, 1, 1);
-        TripPoi secondTripPoi = createTripPoi(trip, secondPoi, 1, 2);
+        TripDay tripDay = new TripDay();
+        tripDay.setTrip(trip);
+        tripDay = tripDayRepository.saveAndFlush(tripDay);
 
-        TripLeg leg = new TripLeg();
-        leg.setFromTripPoi(firstTripPoi);
-        leg.setToTripPoi(secondTripPoi);
-        leg.setDistanceMeters(1200);
-        leg.setDurationSeconds(900);
-        leg.setTransportMode("WALKING");
-        entityManager.persist(leg);
+        TripPoi firstTripPoi = tripPoiRepository.saveAndFlush(createTripPoi(tripDay, firstPoi, 1));
+        tripPoiRepository.saveAndFlush(createTripPoi(tripDay, secondPoi, 2));
 
         TravelPost post = new TravelPost();
         post.setTrip(trip);
         post.setContent("A sample travel journal entry.");
         post.setPhotos("photo-1.jpg,photo-2.jpg");
-        entityManager.persist(post);
+        post = travelPostRepository.saveAndFlush(post);
 
-        entityManager.flush();
-        Long userId = user.getId();
-        Long resetTokenId = resetToken.getId();
-        Long poiId = firstPoi.getId();
-        Long wishlistId = wishlist.getId();
-        Long tripId = trip.getId();
-        Long tripPoiId = firstTripPoi.getId();
-        Long tripLegId = leg.getId();
-        Long postId = post.getId();
-        String googlePlaceId = firstPoi.getGooglePlaceId();
+        User savedUser = userRepository.findById(user.getId()).orElseThrow();
+        PwdResetToken savedResetToken = pwdResetTokenRepository.findById(resetToken.getId()).orElseThrow();
+        Poi savedPoi = poiRepository.findById(firstPoi.getId()).orElseThrow();
+        Wishlist savedWishlist = wishlistRepository.findById(wishlist.getId()).orElseThrow();
+        Trip savedTrip = tripRepository.findById(trip.getId()).orElseThrow();
+        TripDay savedTripDay = tripDayRepository.findById(tripDay.getId()).orElseThrow();
+        TripPoi savedTripPoi = tripPoiRepository.findById(firstTripPoi.getId()).orElseThrow();
+        TravelPost savedPost = travelPostRepository.findById(post.getId()).orElseThrow();
 
-        entityManager.clear();
-
-        User savedUser = entityManager.find(User.class, userId);
-        PwdResetToken savedResetToken = entityManager.find(PwdResetToken.class, resetTokenId);
-        Poi savedPoi = entityManager.find(Poi.class, poiId);
-        Wishlist savedWishlist = entityManager.find(Wishlist.class, wishlistId);
-        Trip savedTrip = entityManager.find(Trip.class, tripId);
-        TripPoi savedTripPoi = entityManager.find(TripPoi.class, tripPoiId);
-        TripLeg savedTripLeg = entityManager.find(TripLeg.class, tripLegId);
-        TravelPost savedPost = entityManager.find(TravelPost.class, postId);
-
-        assertNotNull(savedUser);
-        assertEquals(userId, savedResetToken.getUser().getId());
-        assertEquals(googlePlaceId, savedPoi.getGooglePlaceId());
-        assertEquals(userId, savedWishlist.getUser().getId());
+        assertNotNull(savedUser.getId());
+        assertEquals(savedUser.getId(), savedResetToken.getUser().getId());
+        assertEquals(firstPoi.getGooglePlaceId(), savedPoi.getGooglePlaceId());
+        assertEquals(savedUser.getId(), savedWishlist.getUser().getId());
         assertEquals("Tianjin Weekend", savedTrip.getName());
         assertEquals("Planning", savedTrip.getStatus());
-        assertEquals(poiId, savedTripPoi.getPoi().getId());
-        assertEquals(1200, savedTripLeg.getDistanceMeters());
+        assertEquals(savedTrip.getId(), savedTripDay.getTrip().getId());
+        assertEquals(firstPoi.getId(), savedTripPoi.getPoi().getId());
+        assertEquals(savedTripDay.getId(), savedTripPoi.getTripDay().getId());
         assertEquals("A sample travel journal entry.", savedPost.getContent());
 
-        System.out.println("Sample rows inserted and read back (rolled back after the test):");
+        System.out.println("Sample rows inserted and read back through Spring Data JPA (rolled back after the test):");
         System.out.printf("users: id=%d, email=%s%n", savedUser.getId(), savedUser.getEmail());
         System.out.printf("pwd_reset_tokens: id=%d, user_id=%d%n",
                 savedResetToken.getId(), savedResetToken.getUser().getId());
@@ -109,32 +120,27 @@ class EntityPersistenceIntegrationTest {
         System.out.printf("trips: id=%d, user_id=%d, name=%s, status=%s, day_count=%d%n",
                 savedTrip.getId(), savedTrip.getUser().getId(), savedTrip.getName(),
                 savedTrip.getStatus(), savedTrip.getDayCount());
-        System.out.printf("trip_pois: id=%d, trip_id=%d, poi_id=%d, day=%d, sequence=%d, status=%s%n",
-                savedTripPoi.getId(), savedTripPoi.getTrip().getId(), savedTripPoi.getPoi().getId(),
-                savedTripPoi.getDayNumber(), savedTripPoi.getSequence(), savedTripPoi.getStatus());
-        System.out.printf("trip_legs: id=%d, from_trip_poi_id=%d, to_trip_poi_id=%d, distance_meters=%d%n",
-                savedTripLeg.getId(), savedTripLeg.getFromTripPoi().getId(),
-                savedTripLeg.getToTripPoi().getId(), savedTripLeg.getDistanceMeters());
+        System.out.printf("trip_days: id=%d, trip_id=%d%n",
+                savedTripDay.getId(), savedTripDay.getTrip().getId());
+        System.out.printf("trip_pois: id=%d, poi_id=%d, trip_day_id=%d, sequence=%d, status=%s%n",
+                savedTripPoi.getId(), savedTripPoi.getPoi().getId(),
+                savedTripPoi.getTripDay().getId(), savedTripPoi.getSequence(), savedTripPoi.getStatus());
         System.out.printf("travel_posts: id=%d, trip_id=%d, content=%s, photos=%s%n",
                 savedPost.getId(), savedPost.getTrip().getId(), savedPost.getContent(), savedPost.getPhotos());
     }
 
-    private Poi createPoi(String googlePlaceId) {
+    private static Poi createPoi(String googlePlaceId) {
         Poi poi = new Poi();
         poi.setGooglePlaceId(googlePlaceId);
-        entityManager.persist(poi);
         return poi;
     }
 
-    private TripPoi createTripPoi(Trip trip, Poi poi, int dayNumber, int sequence) {
+    private static TripPoi createTripPoi(TripDay tripDay, Poi poi, int sequence) {
         TripPoi tripPoi = new TripPoi();
-        tripPoi.setTrip(trip);
+        tripPoi.setTripDay(tripDay);
         tripPoi.setPoi(poi);
-        tripPoi.setDayNumber(dayNumber);
         tripPoi.setSequence(sequence);
         tripPoi.setStatus("Planned");
-        entityManager.persist(tripPoi);
         return tripPoi;
     }
-
 }
