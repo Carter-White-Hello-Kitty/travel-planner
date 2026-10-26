@@ -1,4 +1,14 @@
 USE travel_planner;
+
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS pwd_reset_tokens;
+DROP TABLE IF EXISTS pois;
+DROP TABLE IF EXISTS wishlist;
+DROP TABLE IF EXISTS trips;
+DROP TABLE IF EXISTS trip_pois;
+DROP TABLE IF EXISTS trip_legs;
+DROP TABLE IF EXISTS travel_posts;
+
 CREATE TABLE IF NOT EXISTS users
 (
     id            BIGINT PRIMARY KEY AUTO_INCREMENT,
