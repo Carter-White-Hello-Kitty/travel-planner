@@ -1,0 +1,1 @@
+- 统一用 common 下的 Result 作为 Controller 方法的返回类型

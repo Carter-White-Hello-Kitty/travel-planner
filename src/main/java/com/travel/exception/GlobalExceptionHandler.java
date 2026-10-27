@@ -11,6 +11,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * 其他异常，包括自定义异常，均用下面的统一格式来写
+     */
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleUnexpectedException(Exception exception) {
         log.error("Unhandled exception", exception);
