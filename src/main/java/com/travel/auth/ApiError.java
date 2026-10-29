@@ -1,5 +1,6 @@
 package com.travel.auth;
 
+import com.travel.common.Result;
 import java.util.*;
 
 public class ApiError extends RuntimeException {
@@ -25,12 +26,8 @@ public class ApiError extends RuntimeException {
         400, "INVALID_REQUEST", "请求参数无效", List.of(Map.of("field", field, "reason", reason)));
   }
 
-  public Map<String, Object> body() {
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("message", getMessage());
-    body.put("data", null);
-    body.put("error", Map.of("code", code, "fields", fields));
-    return body;
+  public Result<Void> body() {
+    return Result.failure(getMessage(), code, fields);
   }
 
   public ApiError clearing() {

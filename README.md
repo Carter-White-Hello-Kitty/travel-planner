@@ -1,97 +1,148 @@
-# Travel Planner · Authentication v0.2.0
+# Travel Planner Backend
 
-在团队现有 Spring Boot 4.1.2 / Java 17 / Maven / MySQL 项目中加入 Authentication & Authorization。
-本地准备分支：`feature/auth-v0.2.0`；本次准备基于 `82a44d93b1bac611ea35bf687cb79ed1ab3c86aa`。
-本版通过独立功能分支提交；对应Draft PR供团队审核，不自动合并到test或master。
+Travel Planner 项目的 Java 后端服务。项目使用 Spring Boot、Spring Web MVC、Spring Data JPA 和 MySQL。
 
-## 启动
+> 当前仓库是后端开发骨架，已包含基础实体、Repository、统一响应类型和异常处理结构。各业务模块的 API 与业务逻辑由团队成员在对应 feature 分支中逐步实现。
 
-需要 Java 17+ 和 Docker Desktop。在项目根目录执行：
+## 技术要求
 
-```powershell
-docker compose -p flag-auth-v020 -f compose.auth.yaml up -d --wait
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=auth-local"
+- Java 17
+- MySQL
+- Maven Wrapper（仓库已提供，无需单独安装 Maven）
+
+## 项目结构
+
+```text
+src/
+├── main/
+│   ├── java/com/travel/
+│   │   ├── common/       # 通用响应类型等
+│   │   ├── config/       # 应用配置相关
+│   │   ├── controller/  # HTTP API 控制器
+│   │   ├── entity/      # JPA 实体
+│   │   ├── exception/   # 全局异常处理
+│   │   ├── repositories/# Spring Data JPA Repository
+│   │   ├── service/     # 业务接口与实现
+│   │   └── vo/          # 视图对象
+│   └── resources/
+│       ├── application.yaml
+│       └── schema.sql
+└── test/                 # 自动化测试
 ```
 
-- 后端：http://localhost:8085
-- 本地邮件收件箱：http://localhost:18025
-- MySQL：localhost:53306；开发库travel_planner，专用测试库travel_planner_auth_test。
-- auth-local使用开发密钥和HTTP Cookie。正式环境不使用此profile；配置JWT/对称密钥、SMTP与数据库秘密。
-- 开发密钥每次重启变化，已有JWT失效，待发邮件加密载荷无法恢复；正式环境必须使用持久密钥。
+团队代码约定：
 
-## 接口
+- Controller 统一使用 `com.travel.common.Result` 作为响应格式。
+- Service 采用接口与实现类分离的方式。
+- 数据库连接等本地配置通过环境变量提供，不要把密码或其他密钥提交到 GitHub。
 
-六个POST路径保留公共API：`/auth/register`、`/auth/login`、`/auth/request-reset-pwd`、
-`/auth/reset-pwd`、`/auth/logout`、`/auth/refresh`。
-另有 GET /auth/csrf（标准CSRF握手）、GET /auth/me（受保护的身份联调端点）。
+## 首次启动
 
-公共API对应情况、两项明确差异、跨模块接入说明见 [API兼容说明](docs/auth/API_COMPATIBILITY.md)。
+### 1. 克隆仓库
 
-### 前端调用
-
-Spring Security保留标准CSRF校验。在同一Cookie会话中，每次写请求前获取当前CSRF Token：
-
-```javascript
-const base = "http://localhost:8085";
-const { data } = await fetch(base + "/auth/csrf", {
-  credentials: "include"
-}).then(r => r.json());
-const result = await fetch(base + "/auth/login", {
-  method: "POST",
-  credentials: "include",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Requested-With": "XMLHttpRequest",
-    "X-XSRF-TOKEN": data.token
-  },
-  body: JSON.stringify({
-    email: "user@example.com",
-    password: "TravelPlanner!2026"
-  })
-}).then(r => r.json());
+```bash
+git clone https://github.com/Carter-White-Hello-Kitty/travel-planner.git
+cd travel-planner
 ```
 
-默认Origin白名单：http://localhost:3000；Origin由浏览器生成。
-AccessToken只存在前端内存，通过Bearer头发送；RefreshToken为HttpOnly Cookie。
-刷新须做跨标签页单次请求协调；旧RefreshToken重放会撤销当前设备会话。
+### 2. 创建本地数据库
 
-## 验证与打包
+应用连接的数据库名是 `travel_planner`。先在本地 MySQL 中创建该数据库：
 
-Compose初始化脚本自动创建独立测试库和授权。已有卷若缺少测试库，先运行 scripts/Prepare-AuthTestDb.ps1。
-测试资源自动选择auth-test；认证测试清理前会核对库名，拒绝清理其他数据库。
-仓库原有实体持久化测试和context测试也运行在专用测试库中，原测试源码未修改。
-
-```powershell
-.\mvnw.cmd -B -ntp verify
+```sql
+CREATE DATABASE travel_planner
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 ```
 
-报告在 target/surefire-reports；可执行包 target/travel-planner-0.2.0-auth-SNAPSHOT.jar。
-真实HTTP/SMTP smoke检查：
+### 3. 配置本地数据库连接
 
-```powershell
-java -jar target/travel-planner-0.2.0-auth-SNAPSHOT.jar --spring.profiles.active=auth-local --server.port=18086
-# 另一终端：
-python scripts/auth-smoke.py
+在项目根目录创建 `.env` 文件：
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=你的MySQL用户名
+DB_PASSWORD=你的MySQL密码
 ```
 
-该脚本仅允许localhost，在开发库创建独立smoke账户，邮件只进入本地Mailpit。
+`.env` 是本地文件，不要提交到 GitHub。仓库的 `.gitignore` 已忽略 `.env` 文件。
 
-## 结构
+`application.yaml` 使用以上变量连接数据库；服务默认监听 `8085` 端口。
 
-- src/main/java/com/travel/auth：认证接口、安全配置、JWT/密码、MySQL会话、限流、邮件作业。
-- src/main/resources/auth-schema.sql：仅新增Auth私有表；原schema.sql及实体不修改。
-- docs/auth：API差异、发布变更说明、上传计划。
-- scripts/New-AuthSecrets.ps1：生成RSA与独立AES/HMAC密钥，已有secrets目录拒绝覆盖。
+### 4. 启动服务
 
-## 正式配置
+macOS / Linux：
 
-AUTH_ORIGINS、FRONTEND_URL使用实际可信HTTPS域名；COOKIE_SECURE=true，AUTH_DEV_KEYS=false。
-JWT_PRIVATE_KEY/JWT_PUBLIC_KEY为PKCS#8/X.509 PEM文件路径，RSA至少2048位。
-AUTH_MAIL_KEY和AUTH_RATE_KEY各为32随机字节base64；不能使用同一个密钥。
-SMTP_HOST/PORT/USER/PASSWORD/AUTH/TLS、MAIL_FROM按发送服务配置。
-数据库设置DB_HOST、DB_PORT、DB_USERNAME、DB_PASSWORD；不要沿用仓库原有开发默认口令。
-MySQL连接应使用UTC并强制会话UTC（connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true）。
+```bash
+./mvnw spring-boot:run
+```
 
-.env、实际密钥、数据库数据、target构建产物不提交。
-实现使用参数化SQL和事务；所有业务路径默认要求Bearer身份。
-CORS允许GET/POST/PUT/PATCH/DELETE/OPTIONS，写请求保持CSRF保护，队友前端需复用以上握手。
+Windows：
+
+```bat
+mvnw.cmd spring-boot:run
+```
+
+服务启动后，地址为：`http://localhost:8085`。
+
+## 数据库初始化说明
+
+应用启动时会执行 `src/main/resources/schema.sql` 中的建表语句。数据库 `travel_planner` 必须先存在，否则应用无法连接。
+
+当前仓库通过基础 SQL 文件初始化表结构。新增或修改数据库结构时，需要同步考虑已有开发者的数据库；`CREATE TABLE IF NOT EXISTS` 不会自动修改已经存在的表。涉及数据库结构变更时，请在 PR 描述中说明变更内容和本地更新步骤。
+
+## 运行测试
+
+```bash
+./mvnw test
+```
+
+目前的 Spring 集成测试会启动应用并连接 MySQL。运行前请确保 MySQL 已启动、`travel_planner` 数据库已创建，并且 `.env` 配置有效。
+
+## GitHub 团队协作流程
+
+分支用途：
+
+- `master`：稳定版本。
+- `test`：团队集成与测试分支。
+- `feature/<功能名>`：单个功能的开发分支，从最新的 `test` 创建。
+
+组员开发一个功能时：
+
+```bash
+# 第一次在本地创建并跟踪远程 test 分支
+git checkout -b test --track origin/test
+
+# 开始新功能前，先更新 test
+git checkout test
+git pull origin test
+
+# 从 test 创建功能分支
+git checkout -b feature/功能名
+
+# 开发完成后提交并推送功能分支
+git add .
+git commit -m "feat: 描述本次改动"
+git push -u origin feature/功能名
+```
+
+随后在 GitHub 上创建 Pull Request：
+
+- 组员的功能分支合并目标选择 `test`。
+- 在 PR 的 **Reviewers** 中指定组长审查。
+- 根据审查意见修改代码并再次推送到同一个功能分支；PR 会自动包含新提交。
+- 获得批准后，由有权限的组长在 GitHub 上合并 PR。
+
+功能在 `test` 验证通过后，由组长创建从 `test` 到 `master` 的 PR，审查并合并。不要直接向受保护的 `test` 或 `master` 推送代码。
+
+如果本地 Git 版本不支持 `git switch`，使用 `git checkout` 切换分支。
+
+## 提交前检查
+
+```bash
+git status
+git diff
+```
+
+确认只提交本次功能需要的文件，并且没有 `.env`、密码、访问令牌或其他本地私密配置。

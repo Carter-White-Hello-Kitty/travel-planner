@@ -16,7 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class MailWorker {
   final JdbcTemplate db;
   final TransactionTemplate tx;
-  final AuthService auth;
+  final AuthUserStore users;
   final Secrets secrets;
   final Clock clock;
   final JavaMailSender mail;
@@ -36,14 +36,14 @@ public class MailWorker {
   public MailWorker(
       JdbcTemplate db,
       TransactionTemplate tx,
-      AuthService auth,
+      AuthUserStore users,
       Secrets secrets,
       Clock clock,
       JavaMailSender mail,
       Environment env) {
     this.db = db;
     this.tx = tx;
-    this.auth = auth;
+    this.users = users;
     this.secrets = secrets;
     this.clock = clock;
     this.mail = mail;
@@ -95,12 +95,12 @@ public class MailWorker {
           byte[] payload = job.payload;
           Instant expiry = job.expiry;
           if (job.status.equals("pending")) {
-            AuthService.User user = auth.user(job.email);
+            AuthService.User user = users.findByEmail(job.email);
             if (user == null) {
               finish(job.id, "sent");
               return;
             }
-            auth.lockUser(user.id());
+            users.lockById(user.id());
             String token = secrets.token();
             hash = secrets.hash(token);
             expiry = clock.instant().plusSeconds(900);

@@ -1,5 +1,6 @@
 package com.travel.auth;
 
+import com.travel.common.Result;
 import jakarta.servlet.http.*;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -23,28 +24,28 @@ public class AuthController {
   }
 
   @GetMapping("/csrf")
-  public Object csrf(CsrfToken csrf) {
+  public Result<?> csrf(CsrfToken csrf) {
     return api.ok(
         "CSRF token", Map.of("headerName", csrf.getHeaderName(), "token", csrf.getToken()));
   }
 
   @GetMapping("/me")
-  public Object me(@AuthenticationPrincipal TokenService.Identity id) {
+  public Result<?> me(@AuthenticationPrincipal TokenService.Identity id) {
     return api.ok("当前用户", Map.of("userId", id.userId()));
   }
 
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.CREATED)
-  public Object register(@RequestBody Map<String, Object> b, HttpServletRequest q) {
+  public Result<?> register(@RequestBody Map<String, Object> b, HttpServletRequest q) {
     limits.hit("register:" + q.getRemoteAddr(), 10, 3600);
     keys(b, "email", "password");
     return api.ok(
         "账户创建成功，请登录",
-        Map.of("user", auth.view(auth.register(email(b), password(b, "password", true)))));
+        Map.of("user", api.userView(auth.register(email(b), password(b, "password", true)))));
   }
 
   @PostMapping("/login")
-  public Object login(
+  public Result<?> login(
       @RequestBody Map<String, Object> b, HttpServletRequest q, HttpServletResponse r) {
     limits.hit("login-ip:" + q.getRemoteAddr(), 30, 900);
     keys(b, "email", "password");
@@ -58,7 +59,7 @@ public class AuthController {
           "登录成功",
           Map.of(
               "user",
-              auth.view(result.user()),
+              api.userView(result.user()),
               "accessToken",
               result.access().value(),
               "tokenType",
@@ -74,7 +75,7 @@ public class AuthController {
 
   @PostMapping("/request-reset-pwd")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public Object requestReset(@RequestBody Map<String, Object> b, HttpServletRequest q) {
+  public Result<?> requestReset(@RequestBody Map<String, Object> b, HttpServletRequest q) {
     limits.hit("reset-request-ip:" + q.getRemoteAddr(), 10, 3600);
     keys(b, "email");
     String email = email(b);
@@ -84,7 +85,7 @@ public class AuthController {
   }
 
   @PostMapping("/reset-pwd")
-  public Object reset(
+  public Result<?> reset(
       @RequestBody Map<String, Object> b, HttpServletRequest q, HttpServletResponse r) {
     limits.hit("reset-ip:" + q.getRemoteAddr(), 10, 900);
     keys(b, "token", "newPassword");
@@ -96,7 +97,7 @@ public class AuthController {
   }
 
   @PostMapping("/logout")
-  public Object logout(
+  public Result<?> logout(
       @RequestBody Map<String, Object> b, HttpServletRequest q, HttpServletResponse r) {
     limits.hit("logout:" + q.getRemoteAddr(), 60, 60);
     keys(b);
@@ -106,13 +107,13 @@ public class AuthController {
   }
 
   @PostMapping("/refresh")
-  public Object refresh(
+  public Result<?> refresh(
       @RequestBody Map<String, Object> b, HttpServletRequest q, HttpServletResponse r) {
     limits.hit("refresh-ip:" + q.getRemoteAddr(), 120, 60);
     keys(b);
     String token = api.cookie(q);
-    AuthService.Refresh rt = auth.refresh(token);
-    if (rt != null) limits.hit("refresh-sid:" + rt.session(), 30, 60);
+    UUID sessionId = auth.refreshSessionId(token);
+    if (sessionId != null) limits.hit("refresh-sid:" + sessionId, 30, 60);
     AuthService.Login result = auth.rotate(token);
     api.credentials(r, result);
     return api.ok(

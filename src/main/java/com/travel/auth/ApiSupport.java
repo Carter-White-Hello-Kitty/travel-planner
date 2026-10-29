@@ -1,5 +1,6 @@
 package com.travel.auth;
 
+import com.travel.common.Result;
 import jakarta.servlet.http.*;
 import java.time.*;
 import java.util.*;
@@ -19,11 +20,12 @@ public class ApiSupport {
     clock = c;
   }
 
-  public Map<String, Object> ok(String message, Object data) {
-    Map<String, Object> b = new LinkedHashMap<>();
-    b.put("message", message);
-    b.put("data", data);
-    return b;
+  public <T> Result<T> ok(String message, T data) {
+    return Result.success(message, data);
+  }
+
+  public Map<String, Object> userView(AuthService.User user) {
+    return Map.of("id", user.id(), "email", user.email());
   }
 
   public String cookie(String value, long age) {

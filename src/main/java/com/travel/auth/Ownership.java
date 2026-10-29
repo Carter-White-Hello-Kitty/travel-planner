@@ -1,6 +1,5 @@
 package com.travel.auth;
 
-
 /**
  * Shared authorization guard; business repositories must still load the actual owner from the
  * database.

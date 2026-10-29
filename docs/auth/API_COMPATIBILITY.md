@@ -3,6 +3,7 @@
 检查日期：2026-10-28。
 来源：[公共API文档](https://docs.google.com/document/d/11pOKwrFaAaEaSDE5_OEaBUkw-nWkVdtVqj6ZO_uMAXg/edit)；
 [仓库基线](https://github.com/Carter-White-Hello-Kitty/travel-planner/tree/82a44d93b1bac611ea35bf687cb79ed1ab3c86aa)。
+后续已同步test的e5f96e377d6ba544437e027692316a4c2ccd3d83，并按团队README调整响应类型及Service分层。
 
 ## 保持一致的契约
 
@@ -31,7 +32,10 @@ CORS拒绝的恶意跨源请求由安全框架返回403，正文可能是Invalid
 资源不存在由业务模块返回404；别人的资源403；日志还需在发布时检查实时trip状态，否则409。
 不会通过请求中的user_id决定身份。RefreshToken Cookie不能用于业务接口身份认证。
 
-认证错误处理器只作用于com.travel.auth且具有明确优先级，保留团队GlobalExceptionHandler及Result源码。
+认证错误处理器只作用于com.travel.auth且具有明确优先级，保留团队GlobalExceptionHandler。
+Controller统一声明返回com.travel.common.Result；该公共类型兼容保留两参数构造器及原success/failure工厂，新增可选error和自定义成功message。
+普通响应仍只有message/data，认证失败才输出error；序列化兼容性有专门测试。
+AuthService只定义业务接口，AuthServiceImpl实现事务逻辑，AuthUserStore负责共享用户查询与行锁。
 未改动公共实体/Repository和schema.sql；私有Auth表通过额外auth-schema.sql初始化。
 主项目仍为Java17/Maven/MySQL，不引入第二套Gradle、PostgreSQL或重复启动类。
 

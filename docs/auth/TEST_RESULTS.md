@@ -4,6 +4,18 @@
 
 ## Maven verify
 
+### 最新test同步与团队规范重构后的验证
+
+基线：test e5f96e377d6ba544437e027692316a4c2ccd3d83。
+命令：mvnw.cmd -B -ntp clean verify。
+结果：BUILD SUCCESS；26 tests，0 failures，0 errors，0 skipped。
+组成：20项认证集成测试、5项公共Result/返回类型/Service分离兼容测试、1项context测试。
+最新test已移除旧实体示例测试，本分支保留上游该修改，因此不再计入它。
+根README与最新test一致，认证指南在docs/auth/DEVELOPMENT.md。
+重构后的可执行JAR已重新通过真实HTTP/CSRF/SMTP-Mailpit smoke检查，注册至密码恢复及登出流程均PASS。
+
+### 初始v0.2.0上传前记录
+
 命令：mvnw.cmd -B -ntp verify
 结果：BUILD SUCCESS；22 tests，0 failures，0 errors，0 skipped。
 其中20项认证集成测试，另含仓库原有1项实体持久化测试及1项context测试。
