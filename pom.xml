@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.travel-planner</groupId>
     <artifactId>travel-planner</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.2.0-auth-SNAPSHOT</version>
     <name>travel-planner</name>
     <description>travel-planner</description>
 
@@ -19,6 +19,13 @@
     </properties>
 
     <dependencies>
+        <!-- Authentication module: shares the team's Java 17 / MySQL build. -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-mail</artifactId></dependency>
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-oauth2-jose</artifactId></dependency>
+        <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><version>1.83</version></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc-test</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
         <!-- Spring Data JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
