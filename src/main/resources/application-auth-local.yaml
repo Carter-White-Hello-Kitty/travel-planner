@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:53306/travel_planner?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
+    username: travel
+    password: ${AUTH_DB_PASSWORD:local-only-change-me}
+auth:
+  development-keys: true
+  cookie-secure: false

@@ -1,0 +1,23 @@
+spring:
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:11025}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${SMTP_TLS:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+auth:
+  origins: ${AUTH_ORIGINS:http://localhost:3000}
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  cookie-secure: ${COOKIE_SECURE:true}
+  development-keys: ${AUTH_DEV_KEYS:false}
+  private-key: ${JWT_PRIVATE_KEY:}
+  public-key: ${JWT_PUBLIC_KEY:}
+  mail-key: ${AUTH_MAIL_KEY:}
+  rate-key: ${AUTH_RATE_KEY:}
+  mail-from: ${MAIL_FROM:no-reply@travel-planner.local}
+  worker-enabled: true
