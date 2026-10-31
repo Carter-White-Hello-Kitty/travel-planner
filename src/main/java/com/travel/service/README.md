@@ -1,1 +1,0 @@
-- 不要直接写 service 类，要用 interface + impl 方式

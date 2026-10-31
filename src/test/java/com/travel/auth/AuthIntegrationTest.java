@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
+import com.travel.auth.security.Ownership;
+import com.travel.auth.service.AuthService;
+import com.travel.auth.support.MailWorker;
+import com.travel.auth.service.TokenService;
+import com.travel.common.ApiError;
 import jakarta.servlet.http.Cookie;
 import java.time.*;
 import java.util.*;
