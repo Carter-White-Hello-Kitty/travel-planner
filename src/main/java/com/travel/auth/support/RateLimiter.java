@@ -35,7 +35,7 @@ public class RateLimiter {
     long now = clock.instant().getEpochSecond();
     long window = now / seconds;
     String bucket = secrets.rateHash(key) + ":" + window;
-    int count = rateLimitRepository.findById(bucket).map(r -> r.getCount()).orElse(0);
+    int count = rateLimitRepository.findById(bucket).map(AuthRateLimit::getCount).orElse(0);
     if (count >= limit) throw exceeded((int) ((window + 1) * seconds - now));
   }
 

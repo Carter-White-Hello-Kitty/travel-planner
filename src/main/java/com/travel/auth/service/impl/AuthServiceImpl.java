@@ -147,14 +147,14 @@ public class AuthServiceImpl implements AuthService {
           if (current == null || !passwords.matches(password, current.getPasswordHash())) throw credentials();
           UUID sid = UUID.randomUUID();
           Instant expiry = clock.instant().plusSeconds(AuthConstants.SESSION_TTL_SECONDS);
-          String token = secrets.token();
+          String refreshToken = secrets.token();
           AuthSession session = new AuthSession();
           session.setId(sid.toString());
           session.setUserId(current.getId());
           session.setExpiresAt(LocalDateTime.ofInstant(expiry, UTC));
           sessionRepository.save(session);
-          saveRefresh(sid, token, expiry);
-          return new Login(current, jwt.issue(current.getId(), sid, expiry), token, expiry);
+          saveRefresh(sid, refreshToken, expiry);
+          return new Login(current, jwt.issue(current.getId(), sid, expiry), refreshToken, expiry);
         });
   }
 
