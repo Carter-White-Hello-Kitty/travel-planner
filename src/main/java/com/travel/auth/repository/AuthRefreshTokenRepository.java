@@ -15,5 +15,5 @@ public interface AuthRefreshTokenRepository extends JpaRepository<AuthRefreshTok
 
     @Modifying
     @Query("delete from AuthRefreshToken t where t.sessionId in (select s.id from AuthSession s where s.expiresAt < :cutoff)")
-    int deleteBySessionExpiredBefore(@Param("cutoff") LocalDateTime cutoff);
+    void deleteBySessionExpiredBefore(@Param("cutoff") LocalDateTime cutoff);
 }
