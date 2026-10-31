@@ -1,6 +1,7 @@
 package com.travel.auth.support;
 
 import com.travel.auth.config.Secrets;
+import com.travel.auth.entity.AuthRateLimit;
 import com.travel.auth.repository.AuthRateLimitRepository;
 import com.travel.common.ApiError;
 import java.time.Clock;
@@ -47,7 +48,7 @@ public class RateLimiter {
         status ->
             rateLimitRepository.increment(
                 bucket, LocalDateTime.ofInstant(Instant.ofEpochSecond(end), UTC)));
-    int count = rateLimitRepository.findById(bucket).map(r -> r.getCount()).orElse(0);
+    int count = rateLimitRepository.findById(bucket).map(AuthRateLimit::getCount).orElse(0);
     if (count > limit) throw exceeded((int) (end - now));
   }
 

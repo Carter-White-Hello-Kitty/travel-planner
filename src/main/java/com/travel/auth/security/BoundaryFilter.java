@@ -9,6 +9,8 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.*;
 import java.util.*;
+
+import org.jspecify.annotations.NonNull;
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,7 +36,7 @@ public class BoundaryFilter extends OncePerRequestFilter {
 
   @Override
   protected void doFilterInternal(
-      HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+          HttpServletRequest req, HttpServletResponse res, @NonNull FilterChain chain)
       throws IOException, ServletException {
     try {
       String path = req.getRequestURI().substring(req.getContextPath().length());

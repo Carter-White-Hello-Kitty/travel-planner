@@ -6,6 +6,7 @@ import com.travel.auth.entity.AuthMailJob;
 import com.travel.auth.entity.AuthRefreshToken;
 import com.travel.auth.entity.AuthSession;
 import com.travel.auth.entity.PwdResetToken;
+import com.travel.auth.entity.User;
 import com.travel.auth.repository.AuthMailJobRepository;
 import com.travel.auth.repository.AuthRefreshTokenRepository;
 import com.travel.auth.repository.AuthSessionRepository;
@@ -74,18 +75,12 @@ public class AuthServiceImpl implements AuthService {
     return LocalDateTime.ofInstant(clock.instant(), UTC);
   }
 
-  private AuthService.User user(String email) {
-    return userRepository
-        .findByEmail(email)
-        .map(u -> new AuthService.User(u.getId(), u.getEmail(), u.getPasswordHash()))
-        .orElse(null);
+  private User user(String email) {
+    return userRepository.findByEmail(email).orElse(null);
   }
 
-  private AuthService.User lockUser(Long id) {
-    return userRepository
-        .findByIdForUpdate(id)
-        .map(u -> new AuthService.User(u.getId(), u.getEmail(), u.getPasswordHash()))
-        .orElse(null);
+  private User lockUser(Long id) {
+    return userRepository.findByIdForUpdate(id).orElse(null);
   }
 
   private Refresh refresh(String token) {
@@ -125,9 +120,9 @@ public class AuthServiceImpl implements AuthService {
             });
   }
 
-  public AuthService.User register(String email, String password) {
+  public User register(String email, String password) {
     String encoded = passwords.encode(password);
-    com.travel.auth.entity.User entity = new com.travel.auth.entity.User();
+    User entity = new User();
     entity.setEmail(email);
     entity.setPasswordHash(encoded);
     try {
@@ -135,31 +130,31 @@ public class AuthServiceImpl implements AuthService {
     } catch (DataIntegrityViolationException e) {
       throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "邮箱已注册");
     }
-    return new AuthService.User(entity.getId(), entity.getEmail(), entity.getPasswordHash());
+    return entity;
   }
 
   public Login login(String email, String password, String old) {
-    AuthService.User candidate = user(email);
+    User candidate = user(email);
     if (candidate == null) {
       passwords.matches(password, dummy);
       throw credentials();
     }
-    if (!passwords.matches(password, candidate.hash())) throw credentials();
+    if (!passwords.matches(password, candidate.getPasswordHash())) throw credentials();
     if (old != null) logout(old);
     return tx.execute(
         st -> {
-          AuthService.User current = lockUser(candidate.id());
-          if (current == null || !passwords.matches(password, current.hash())) throw credentials();
+          User current = lockUser(candidate.getId());
+          if (current == null || !passwords.matches(password, current.getPasswordHash())) throw credentials();
           UUID sid = UUID.randomUUID();
           Instant expiry = clock.instant().plusSeconds(AuthConstants.SESSION_TTL_SECONDS);
           String token = secrets.token();
           AuthSession session = new AuthSession();
           session.setId(sid.toString());
-          session.setUserId(current.id());
+          session.setUserId(current.getId());
           session.setExpiresAt(LocalDateTime.ofInstant(expiry, UTC));
           sessionRepository.save(session);
           saveRefresh(sid, token, expiry);
-          return new Login(current, jwt.issue(current.id(), sid, expiry), token, expiry);
+          return new Login(current, jwt.issue(current.getId(), sid, expiry), token, expiry);
         });
   }
 
@@ -245,7 +240,7 @@ public class AuthServiceImpl implements AuthService {
           List<PwdResetToken> tokens =
               pwdResetTokenRepository.findValidByTokenHashForUpdate(hash, now());
           if (tokens.isEmpty()) throw resetError();
-          com.travel.auth.entity.User user = userRepository.findById(userId).orElseThrow();
+          User user = userRepository.findById(userId).orElseThrow();
           user.setPasswordHash(encoded);
           pwdResetTokenRepository.deleteByUserId(userId);
           sessionRepository.revokeAllByUserId(userId, now());

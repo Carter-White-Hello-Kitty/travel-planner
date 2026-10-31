@@ -1,6 +1,7 @@
 package com.travel.auth.controller;
 
 import com.travel.auth.constant.AuthConstants;
+import com.travel.auth.entity.User;
 import com.travel.auth.service.AuthService;
 import com.travel.auth.support.RateLimiter;
 import com.travel.auth.service.TokenService;
@@ -156,8 +157,8 @@ public class AuthController {
             result.access().seconds()));
   }
 
-  private Map<String, Object> userView(AuthService.User user) {
-    return Map.of("id", user.id(), "email", user.email());
+  private Map<String, Object> userView(User user) {
+    return Map.of("id", user.getId(), "email", user.getEmail());
   }
 
   private void credentials(HttpServletResponse response, AuthService.Login login) {

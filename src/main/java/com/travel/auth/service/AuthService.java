@@ -1,11 +1,11 @@
 package com.travel.auth.service;
 
+import com.travel.auth.entity.User;
 import java.time.Instant;
 import java.util.UUID;
 
 /** Business contract used by HTTP/security callers; persistence stays in the implementation. */
 public interface AuthService {
-  record User(Long id, String email, String hash) {}
 
   record Login(User user, TokenService.Access access, String refresh, Instant expiry) {}
 

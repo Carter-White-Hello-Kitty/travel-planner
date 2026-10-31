@@ -15,9 +15,9 @@ public interface AuthRateLimitRepository extends JpaRepository<AuthRateLimit, St
             value = "INSERT INTO auth_rate_limits(bucket_key, count, expires_at) VALUES (:bucket, 1, :expiry) "
                     + "ON DUPLICATE KEY UPDATE count = count + 1",
             nativeQuery = true)
-    int increment(@Param("bucket") String bucket, @Param("expiry") LocalDateTime expiry);
+    void increment(@Param("bucket") String bucket, @Param("expiry") LocalDateTime expiry);
 
     @Modifying
     @Query("delete from AuthRateLimit r where r.expiresAt < :cutoff")
-    int deleteByExpiresAtBefore(@Param("cutoff") LocalDateTime cutoff);
+    void deleteByExpiresAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }
