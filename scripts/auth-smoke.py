@@ -7,7 +7,7 @@ import time
 import urllib.request
 import urllib.error
 import uuid
-base = os.environ.get("SMOKE_URL", "http://localhost:18086")
+base = os.environ.get("SMOKE_URL", "http://localhost:8085")
 if not base.startswith("http://localhost:"):
     raise SystemExit("This smoke script is restricted to localhost")
 jar = http.cookiejar.CookieJar()
