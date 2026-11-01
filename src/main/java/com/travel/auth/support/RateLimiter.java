@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -53,7 +54,7 @@ public class RateLimiter {
   }
 
   private ApiError exceeded(int retryAfter) {
-    ApiError error = new ApiError(429, "RATE_LIMITED", "请求过于频繁");
+    ApiError error = new ApiError(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many requests");
     error.retryAfter = retryAfter;
     return error;
   }

@@ -4,6 +4,7 @@ import com.travel.auth.config.Secrets;
 import com.travel.auth.constant.AuthConstants;
 import com.travel.auth.entity.AuthMailJob;
 import com.travel.auth.entity.AuthRefreshToken;
+import com.travel.auth.entity.MailJobStatus;
 import com.travel.auth.entity.AuthSession;
 import com.travel.auth.entity.PwdResetToken;
 import com.travel.auth.entity.User;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -128,7 +130,7 @@ public class AuthServiceImpl implements AuthService {
     try {
       userRepository.save(entity);
     } catch (DataIntegrityViolationException e) {
-      throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "邮箱已注册");
+      throw new ApiError(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", "Email already registered");
     }
     return entity;
   }
@@ -159,7 +161,7 @@ public class AuthServiceImpl implements AuthService {
   }
 
   private ApiError credentials() {
-    return new ApiError(401, "INVALID_CREDENTIALS", "邮箱或密码错误");
+    return new ApiError(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid email or password");
   }
 
   private void saveRefresh(UUID sid, String token, Instant expiry) {
@@ -184,7 +186,7 @@ public class AuthServiceImpl implements AuthService {
               if (!active(current) || latest == null) return invalidRefresh();
               if (latest.used()) {
                 revoke(current.id());
-                return new ApiError(401, "REFRESH_TOKEN_REUSED", "刷新令牌已被使用").clearing();
+                return new ApiError(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_REUSED", "Refresh token already used").clearing();
               }
               TokenService.Access access;
               try {
@@ -203,7 +205,7 @@ public class AuthServiceImpl implements AuthService {
   }
 
   private ApiError invalidRefresh() {
-    return new ApiError(401, "REFRESH_TOKEN_INVALID_OR_EXPIRED", "刷新令牌无效或过期").clearing();
+    return new ApiError(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID_OR_EXPIRED", "Invalid or expired refresh token").clearing();
   }
 
   public void logout(String token) {
@@ -222,7 +224,7 @@ public class AuthServiceImpl implements AuthService {
     AuthMailJob job = new AuthMailJob();
     job.setId(UUID.randomUUID().toString());
     job.setEmail(email);
-    job.setStatus("pending");
+    job.setStatus(MailJobStatus.PENDING);
     job.setAttempts(0);
     job.setNextAttemptAt(now());
     mailJobRepository.save(job);
@@ -248,14 +250,14 @@ public class AuthServiceImpl implements AuthService {
   }
 
   private ApiError resetError() {
-    return new ApiError(400, "RESET_TOKEN_INVALID_OR_EXPIRED", "链接无效或已过期，请重新申请");
+    return new ApiError(HttpStatus.BAD_REQUEST, "RESET_TOKEN_INVALID_OR_EXPIRED", "Invalid or expired reset link");
   }
 
   public TokenService.Identity authenticate(String token) {
     TokenService.Identity id = jwt.verify(token);
     Session s = session(id.sessionId(), false);
     if (!active(s) || !s.user().equals(id.userId()))
-      throw new ApiError(401, "SESSION_REVOKED", "会话已失效，请重新登录");
+      throw new ApiError(HttpStatus.UNAUTHORIZED, "SESSION_REVOKED", "Session has been revoked, please log in again");
     return id;
   }
 

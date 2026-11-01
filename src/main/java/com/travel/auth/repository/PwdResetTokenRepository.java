@@ -22,13 +22,13 @@ public interface PwdResetTokenRepository extends JpaRepository<PwdResetToken, Lo
 
     @Modifying
     @Query("delete from PwdResetToken t where t.user.id = :userId")
-    int deleteByUserId(@Param("userId") Long userId);
+    void deleteByUserId(@Param("userId") Long userId);
 
     @Modifying
     @Query("delete from PwdResetToken t where t.tokenHash = :hash")
-    int deleteByTokenHash(@Param("hash") String hash);
+    void deleteByTokenHash(@Param("hash") String hash);
 
     @Modifying
     @Query("delete from PwdResetToken t where t.expiresAt < :cutoff")
-    int deleteByExpiresAtBefore(@Param("cutoff") LocalDateTime cutoff);
+    void deleteByExpiresAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }

@@ -12,6 +12,7 @@ import java.util.*;
 
 import org.jspecify.annotations.NonNull;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -44,21 +45,21 @@ public class BoundaryFilter extends OncePerRequestFilter {
       if (path.startsWith("/auth/") && req.getMethod().equals("POST")) {
         if (!origins.contains(req.getHeader("Origin"))
             || !"XMLHttpRequest".equals(req.getHeader("X-Requested-With")))
-          throw new ApiError(403, "CSRF_REJECTED", "请求来源或请求头无效");
+          throw new ApiError(HttpStatus.FORBIDDEN, "CSRF_REJECTED", "Invalid request origin or header");
         String type = req.getContentType();
         if (type == null || !type.split(";")[0].trim().equalsIgnoreCase("application/json"))
-          throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "请求必须为JSON");
+          throw new ApiError(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "Request must be JSON");
         byte[] bytes = req.getInputStream().readNBytes(AuthConstants.REQUEST_BODY_MAX_BYTES + 1);
         if (bytes.length > AuthConstants.REQUEST_BODY_MAX_BYTES)
-          throw new ApiError(413, "PAYLOAD_TOO_LARGE", "请求体过大");
+          throw new ApiError(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "Request body too large");
         req = new BufferedRequest(req, bytes);
       }
       if (!PUBLIC.contains(path) && !req.getMethod().equals("OPTIONS")) {
         String bearer = req.getHeader("Authorization");
         if (bearer == null || !bearer.startsWith("Bearer "))
-          throw new ApiError(401, "AUTH_REQUIRED", "请先登录");
+          throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
         if (bearer.length() > AuthConstants.REQUEST_BODY_MAX_BYTES)
-          throw new ApiError(401, "ACCESS_TOKEN_INVALID", "登录凭据无效");
+          throw new ApiError(HttpStatus.UNAUTHORIZED, "ACCESS_TOKEN_INVALID", "Invalid access token");
         TokenService.Identity id = auth.authenticate(bearer.substring(7));
         SecurityContextHolder.getContext()
             .setAuthentication(new UsernamePasswordAuthenticationToken(id, null, List.of()));
@@ -67,7 +68,7 @@ public class BoundaryFilter extends OncePerRequestFilter {
     } catch (ApiError e) {
       api.write(res, e);
     } catch (DataAccessException e) {
-      api.write(res, new ApiError(503, "SERVICE_UNAVAILABLE", "服务暂时不可用"));
+      api.write(res, new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", "Service temporarily unavailable"));
     } finally {
       SecurityContextHolder.clearContext();
     }

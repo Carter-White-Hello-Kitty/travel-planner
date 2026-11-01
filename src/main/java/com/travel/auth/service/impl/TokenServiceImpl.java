@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,7 +33,7 @@ public class TokenServiceImpl implements TokenService {
   public Access issue(Long user, UUID sid, Instant expiry) {
     Instant now = clock.instant();
     long n = Math.min(AuthConstants.ACCESS_TOKEN_TTL_SECONDS, Duration.between(now, expiry).toSeconds());
-    if (n < 1) throw new ApiError(401, "REFRESH_TOKEN_INVALID_OR_EXPIRED", "会话已过期").clearing();
+    if (n < 1) throw new ApiError(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID_OR_EXPIRED", "Session expired").clearing();
     try {
       SignedJWT j =
           new SignedJWT(
@@ -71,12 +72,12 @@ public class TokenServiceImpl implements TokenService {
           new Identity(Long.valueOf(c.getSubject()), UUID.fromString(c.getStringClaim("sid")));
       if (id.userId() <= 0) throw new IllegalArgumentException();
       if (!c.getExpirationTime().toInstant().isAfter(clock.instant()))
-        throw new ApiError(401, "ACCESS_TOKEN_EXPIRED", "登录凭据已过期");
+        throw new ApiError(HttpStatus.UNAUTHORIZED, "ACCESS_TOKEN_EXPIRED", "Access token has expired");
       return id;
     } catch (ApiError e) {
       throw e;
     } catch (Exception e) {
-      throw new ApiError(401, "ACCESS_TOKEN_INVALID", "登录凭据无效");
+      throw new ApiError(HttpStatus.UNAUTHORIZED, "ACCESS_TOKEN_INVALID", "Invalid access token");
     }
   }
 }

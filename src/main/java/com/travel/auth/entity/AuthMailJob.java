@@ -2,6 +2,8 @@ package com.travel.auth.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -22,8 +24,9 @@ public class AuthMailJob {
     @Column(nullable = false, length = 320)
     private String email;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private MailJobStatus status;
 
     @Column(name = "token_hash", length = 64, columnDefinition = "CHAR(64)")
     private String tokenHash;

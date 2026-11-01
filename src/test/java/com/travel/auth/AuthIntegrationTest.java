@@ -412,7 +412,7 @@ class AuthIntegrationTest {
     doThrow(new MailSendException("test smtp down")).when(mail).send(any(SimpleMailMessage.class));
     postJson("/auth/request-reset-pwd", Map.of("email", EMAIL));
     worker.processOne();
-    assertEquals("ready", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
+    assertEquals("READY", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
     assertEquals(1, db.queryForObject("SELECT attempts FROM auth_mail_jobs", Integer.class));
     byte[] payload =
         db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs", byte[].class);
@@ -420,7 +420,7 @@ class AuthIntegrationTest {
     clock.advance(61);
     doNothing().when(mail).send(any(SimpleMailMessage.class));
     worker.processOne();
-    assertEquals("sent", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
+    assertEquals("SENT", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
     assertNull(db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs", byte[].class));
   }
 
@@ -514,7 +514,7 @@ class AuthIntegrationTest {
     var identity = new TokenService.Identity(user, UUID.randomUUID());
     Ownership.requireOwner(identity, user);
     ApiError failure = assertThrows(ApiError.class, () -> Ownership.requireOwner(identity, 2L));
-    assertEquals(403, failure.status);
+    assertEquals(403, failure.status.value());
   }
 
   @Test

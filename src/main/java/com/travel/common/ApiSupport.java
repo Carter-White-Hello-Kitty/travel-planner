@@ -44,7 +44,7 @@ public class ApiSupport {
   }
 
   public void write(HttpServletResponse response, ApiError e) throws java.io.IOException {
-    response.setStatus(e.status);
+    response.setStatus(e.status.value());
     response.setContentType("application/json");
     response.setCharacterEncoding("UTF-8");
     response.setHeader("Cache-Control", "no-store");

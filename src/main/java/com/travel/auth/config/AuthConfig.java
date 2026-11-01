@@ -9,6 +9,7 @@ import java.time.Clock;
 import java.util.*;
 import org.springframework.context.annotation.*;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -81,15 +82,15 @@ public class AuthConfig {
         .exceptionHandling(
             c ->
                 c.authenticationEntryPoint(
-                        (q, r, e) -> api.write(r, new ApiError(401, "AUTH_REQUIRED", "请先登录")))
+                        (q, r, e) -> api.write(r, new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required")))
                     .accessDeniedHandler(
                         (q, r, e) ->
                             api.write(
                                 r,
                                 new ApiError(
-                                    403,
+                                    HttpStatus.FORBIDDEN,
                                     e instanceof CsrfException ? "CSRF_REJECTED" : "FORBIDDEN",
-                                    "请求未获授权"))))
+                                    "Forbidden"))))
         .build();
   }
 }

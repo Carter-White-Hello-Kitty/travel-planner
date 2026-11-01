@@ -42,7 +42,7 @@ public class AuthController {
 
   @GetMapping("/me")
   public Result<?> me(@AuthenticationPrincipal TokenService.Identity id) {
-    return api.ok("当前用户", Map.of("userId", id.userId()));
+    return api.ok("Current user", Map.of("userId", id.userId()));
   }
 
   @PostMapping("/register")
@@ -52,7 +52,7 @@ public class AuthController {
         "register:" + request.getRemoteAddr(), AuthConstants.REGISTER_LIMIT, AuthConstants.REGISTER_WINDOW);
     keys(body, "email", "password");
     return api.ok(
-        "账户创建成功，请登录",
+        "Account created successfully. Please log in.",
         Map.of("user", userView(auth.register(email(body), password(body, "password", true)))));
   }
 
@@ -71,7 +71,7 @@ public class AuthController {
       AuthService.Login result = auth.login(email, password, api.cookie(request));
       credentials(response, result);
       return api.ok(
-          "登录成功",
+          "Login successful",
           Map.of(
               "user",
               userView(result.user()),
@@ -102,7 +102,7 @@ public class AuthController {
     String email = email(body);
     limits.hit("reset-email:" + email, AuthConstants.RESET_EMAIL_LIMIT, AuthConstants.RESET_EMAIL_WINDOW);
     auth.requestReset(email);
-    return api.ok("如果该邮箱已注册，我们将发送密码重置链接，请检查邮箱", null);
+    return api.ok("If this email is registered, a password reset link has been sent. Please check your inbox.", null);
   }
 
   @PostMapping("/reset-pwd")
@@ -112,10 +112,10 @@ public class AuthController {
         "reset-ip:" + request.getRemoteAddr(), AuthConstants.RESET_IP_LIMIT, AuthConstants.RESET_IP_WINDOW);
     keys(body, "token", "newPassword");
     String token = string(body, "token");
-    if (!token.matches(AuthConstants.TOKEN_PATTERN)) throw ApiError.invalid("token", "令牌格式无效");
+    if (!token.matches(AuthConstants.TOKEN_PATTERN)) throw ApiError.invalid("token", "Invalid token format");
     auth.reset(token, password(body, "newPassword", true));
     response.addHeader("Set-Cookie", api.cookie("", 0));
-    return api.ok("密码已重置，请重新登录", null);
+    return api.ok("Password has been reset. Please log in again.", null);
   }
 
   @PostMapping("/logout")
@@ -126,7 +126,7 @@ public class AuthController {
     keys(body);
     auth.logout(api.cookie(request));
     response.addHeader("Set-Cookie", api.cookie("", 0));
-    return api.ok("已退出登录", null);
+    return api.ok("Logged out successfully", null);
   }
 
   @PostMapping("/refresh")
@@ -147,7 +147,7 @@ public class AuthController {
     AuthService.Login result = auth.rotate(token);
     credentials(response, result);
     return api.ok(
-        "令牌已刷新",
+        "Token refreshed",
         Map.of(
             "accessToken",
             result.access().value(),
@@ -170,18 +170,18 @@ public class AuthController {
 
   void keys(Map<String, Object> body, String... allowed) {
     Set<String> names = Set.of(allowed);
-    for (String k : body.keySet()) if (!names.contains(k)) throw ApiError.invalid(k, "未知字段");
+    for (String k : body.keySet()) if (!names.contains(k)) throw ApiError.invalid(k, "Unknown field");
   }
 
   String string(Map<String, Object> body, String field) {
-    if (!(body.get(field) instanceof String s)) throw ApiError.invalid(field, "必填字符串");
+    if (!(body.get(field) instanceof String s)) throw ApiError.invalid(field, "Required string");
     return s;
   }
 
   String email(Map<String, Object> body) {
     String s = string(body, "email").strip().toLowerCase(Locale.ROOT);
     if (s.length() > AuthConstants.EMAIL_MAX_LENGTH || !EMAIL.matcher(s).matches())
-      throw ApiError.invalid("email", "邮箱格式无效");
+      throw ApiError.invalid("email", "Invalid email format");
     return s;
   }
 
@@ -189,7 +189,7 @@ public class AuthController {
     String s = string(body, field);
     int n = s.codePointCount(0, s.length());
     if (n < (newPassword ? AuthConstants.PASSWORD_MIN_LENGTH : 1) || n > AuthConstants.PASSWORD_MAX_LENGTH)
-      throw ApiError.invalid(field, "密码长度无效");
+      throw ApiError.invalid(field, "Invalid password length");
     return s;
   }
 }

@@ -3,6 +3,7 @@ package com.travel.auth.support;
 import com.travel.auth.config.Secrets;
 import com.travel.auth.constant.AuthConstants;
 import com.travel.auth.entity.AuthMailJob;
+import com.travel.auth.entity.MailJobStatus;
 import com.travel.auth.entity.PwdResetToken;
 import com.travel.auth.entity.User;
 import com.travel.auth.repository.AuthMailJobRepository;
@@ -30,8 +31,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class MailWorker {
   private static final ZoneOffset UTC = ZoneOffset.UTC;
-  private static final List<String> PENDING_READY = List.of("pending", "ready");
-  private static final List<String> FINISHED = List.of("sent", "failed");
+  private static final List<MailJobStatus> PENDING_READY =
+      List.of(MailJobStatus.PENDING, MailJobStatus.READY);
+  private static final List<MailJobStatus> FINISHED =
+      List.of(MailJobStatus.SENT, MailJobStatus.FAILED);
 
   private final AuthMailJobRepository mailJobRepository;
   private final AuthWorkerLockRepository workerLockRepository;
@@ -112,10 +115,10 @@ public class MailWorker {
           byte[] payload = job.getEncryptedPayload();
           LocalDateTime expiry = job.getExpiresAt();
 
-          if ("pending".equals(job.getStatus())) {
+          if (job.getStatus() == MailJobStatus.PENDING) {
             User user = userRepository.findByEmail(job.getEmail()).orElse(null);
             if (user == null) {
-              finish(job, "sent");
+              finish(job, MailJobStatus.SENT);
               return;
             }
             userRepository.findByIdForUpdate(user.getId());
@@ -130,7 +133,7 @@ public class MailWorker {
             pwdResetTokenRepository.save(resetToken);
             payload =
                 secrets.encrypt(frontend.replaceAll("/$", "") + "/reset-password#token=" + token);
-            job.setStatus("ready");
+            job.setStatus(MailJobStatus.READY);
             job.setTokenHash(hash);
             job.setEncryptedPayload(payload);
             job.setExpiresAt(expiry);
@@ -145,12 +148,13 @@ public class MailWorker {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
             message.setTo(job.getEmail());
-            message.setSubject("Travel Planner 密码重置");
+            message.setSubject("Travel Planner Password Reset");
             message.setText(
-                "请在15分钟内打开以下链接设置新密码。若非本人申请，请忽略。\n"
+                "Please open the following link within 15 minutes to set a new password. "
+                    + "If you did not request this, please ignore it.\n"
                     + secrets.decrypt(payload));
             mail.send(message);
-            finish(job, "sent");
+            finish(job, MailJobStatus.SENT);
           } catch (Exception error) {
             if (job.getAttempts() >= AuthConstants.MAIL_MAX_ATTEMPTS) {
               fail(job, hash);
@@ -163,14 +167,14 @@ public class MailWorker {
         });
   }
 
-  private void finish(AuthMailJob job, String status) {
+  private void finish(AuthMailJob job, MailJobStatus status) {
     job.setStatus(status);
     job.setEncryptedPayload(null);
   }
 
   private void fail(AuthMailJob job, String hash) {
     if (hash != null) pwdResetTokenRepository.deleteByTokenHash(hash);
-    finish(job, "failed");
+    finish(job, MailJobStatus.FAILED);
   }
 
   @Scheduled(fixedDelay = AuthConstants.CLEANUP_INTERVAL_MS)
