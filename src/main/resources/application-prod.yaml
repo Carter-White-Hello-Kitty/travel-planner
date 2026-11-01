@@ -1,0 +1,5 @@
+# Production: secure defaults. Secrets (DB password, JWT keys, mail key) are injected via environment variables.
+auth:
+  cookie-secure: true
+  development-keys: false
+  worker-enabled: true
