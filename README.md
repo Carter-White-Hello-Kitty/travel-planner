@@ -113,6 +113,8 @@ SMOKE_URL=http://localhost:8085 python3 scripts/auth-smoke.py
 
 ## 项目结构
 
+POI 搜索的配置、认证请求和测试步骤见 [POI_SEARCH.md](POI_SEARCH.md)。
+
 ```
 com.travel
 ├── common/          # 共享内核：Result、ApiError、ApiSupport、GlobalExceptionHandler
