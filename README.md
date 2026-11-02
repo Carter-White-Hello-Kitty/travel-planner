@@ -15,8 +15,7 @@
 ## 前置要求
 
 - JDK 17+
-- Docker Desktop（跑自动化测试用）
-- MySQL 8（本地开发用，可本地安装，也可复用 Docker）
+- Docker Desktop（提供开发和测试共用的 MySQL，以及 Mailpit）
 
 ## 环境配置（Profile）
 
@@ -24,8 +23,8 @@
 
 | Profile | 用途 | 数据库 |
 |---------|------|--------|
-| `dev`（默认） | 本地开发 | 本地 MySQL `3306` 的 `travel_planner` |
-| `test` | 自动化测试 | Docker MySQL `53306` 的 `travel_planner_test` |
+| `dev`（默认） | 本地开发、冒烟测试 | Docker MySQL `53306` 的 `travel_planner` |
+| `test` | 自动化集成测试 | 同一个 Docker MySQL `53306` 的 `travel_planner_test` |
 | `prod` | 生产 | 环境变量注入（yaml 里无真实密钥） |
 
 ---
@@ -39,43 +38,36 @@ git clone https://github.com/Carter-White-Hello-Kitty/travel-planner.git
 cd travel-planner
 ```
 
-### 2. 建本地数据库
-
-在本地 MySQL 里创建开发库：
-
-```sql
-CREATE DATABASE travel_planner
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-```
-
-### 3. 配置 `.env`
+### 2. 配置 `.env`
 
 在项目根目录创建 `.env` 文件（**已被 `.gitignore` 忽略，不会提交**）：
 
 ```dotenv
 DB_HOST=localhost
-DB_PORT=3306
-DB_USERNAME=root
-DB_PASSWORD=你的MySQL密码
+DB_PORT=53306
+DB_USERNAME=travel
+DB_PASSWORD=local-only-change-me
 ```
 
-### 4. 启动服务
+`DB_PORT` 和 `DB_PASSWORD` 同时供 Compose、开发服务和集成测试使用。示例密码仅用于本机；如需修改，请在首次启动 Docker 前修改 `.env`。已有数据卷不会因为修改密码或初始化脚本而重新初始化。
+
+### 3. 启动本地依赖和服务
 
 ```bash
+docker compose up -d --wait
 ./mvnw spring-boot:run
 ```
 
-默认使用 `dev` profile，监听 `http://localhost:8085`。启动时会自动执行 `schema.sql` 建表（`CREATE TABLE IF NOT EXISTS`，幂等）。
+Compose 启动一个 MySQL 容器和一个 Mailpit 容器；MySQL 容器内有开发库 `travel_planner` 和测试库 `travel_planner_test`。默认使用 `dev` profile 的 Java 服务连接开发库，监听 `http://localhost:8085`。Java 服务启动时会执行共享的 `schema.sql` 建表（`CREATE TABLE IF NOT EXISTS`，幂等）。Compose 不启动 Java 服务。
 
 ---
 
 ## 二、本地测试（跑自动化测试）
 
-### 1. 启动本地依赖（MySQL + 假邮箱）
+### 1. 启动本地依赖（若已在开发时启动，可跳过）
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 ```
 
 会启动两个容器：
@@ -83,9 +75,9 @@ docker compose up -d
 - **MySQL 8.4**：`localhost:53306`，用户 `travel` / 默认密码 `local-only-change-me`；包含开发库 `travel_planner` 和独立测试库 `travel_planner_test`
 - **Mailpit**（假邮箱）：SMTP `localhost:11025`，网页收件箱 `http://localhost:18025`
 
-`compose.yaml` 只启动本地依赖，不启动 Java 后端。测试库由 `scripts/init-test-db.sql` 在空 MySQL 数据卷首次初始化时创建。若修改本地密码，设置 `TEST_DB_PASSWORD`，并让 Compose 与 Spring 测试使用相同的值。开发模式默认仍连接本机 `3306`；要复用 Docker 的开发库，需在 `.env` 中把 `DB_PORT` 设为 `53306`，并使用 `travel` 账号及相同密码。
+开发库由 MySQL 镜像的 `MYSQL_DATABASE` 创建；测试库由 `scripts/init-test-db.sql` 创建。这两个动作只在空 MySQL 数据卷首次初始化时发生。业务表由 Java 服务启动时执行 `schema.sql` 创建。
 
-若本机 `53306` 端口已被占用，可在启动 Compose 和运行 Maven 测试时都设置同一个 `TEST_DB_PORT`。Mailpit 的 `11025`、`18025` 端口也必须空闲；只运行集成测试时，可以只启动 `mysql` 服务。
+若本机 `53306` 端口已被占用，可在 `.env` 中修改 `DB_PORT`，再启动 Compose、Java 服务和 Maven 测试；三者会使用同一端口。Mailpit 的 `11025`、`18025` 端口也必须空闲；只运行集成测试时，可以只启动 `mysql` 服务。
 
 ### 2. 跑测试
 
@@ -93,9 +85,7 @@ docker compose up -d
 ./mvnw clean verify
 ```
 
-测试会连 Docker 的 `travel_planner_test`。认证集成测试在每个用例前核对库名，并清理其测试数据；目前共有 20 个认证测试。测试类按模块放在 `src/test/java/com/travel/<模块名>/`，具体约定见 `src/test/README.md`。
-
-> 从旧版 `auth-mysql` 数据卷升级时，新的 `mysql-data` 数据卷会创建一套空数据库；旧数据卷不会被自动迁移或删除。需要保留旧开发数据时，请先备份并迁移，不要直接删除旧数据卷。
+测试会连 Docker 的 `travel_planner_test`，不会清理开发库。认证集成测试在每个用例前核对库名，并清理其测试数据；目前共有 20 个认证测试。测试类按模块放在 `src/test/java/com/travel/<模块名>/`，具体约定见 `src/test/README.md`。
 
 ---
 

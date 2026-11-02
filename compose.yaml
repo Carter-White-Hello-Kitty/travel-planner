@@ -4,9 +4,9 @@ services:
     environment:
       MYSQL_DATABASE: travel_planner
       MYSQL_USER: travel
-      MYSQL_PASSWORD: ${TEST_DB_PASSWORD:-local-only-change-me}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-local-only-change-me}
       MYSQL_ROOT_PASSWORD: ${LOCAL_MYSQL_ROOT_PASSWORD:-local-root-only}
-    ports: ["127.0.0.1:${TEST_DB_PORT:-53306}:3306"]
+    ports: ["127.0.0.1:${DB_PORT:-53306}:3306"]
     volumes:
       - mysql-data:/var/lib/mysql
       - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
