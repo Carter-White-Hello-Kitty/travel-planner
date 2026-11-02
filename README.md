@@ -97,11 +97,13 @@ docker compose up -d --wait
 # 终端 1：起服务
 ./mvnw spring-boot:run
 
-# 终端 2：跑端到端冒烟测试（注册 → 登录 → 刷新 → 重置 → 收邮件 → 登出）
-SMOKE_URL=http://localhost:8085 python3 scripts/auth-smoke.py
+# 终端 2：运行所有冒烟测试（认证测试覆盖注册 → 登录 → 刷新 → 重置 → 收邮件 → 登出）
+SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
 ```
 
 输出 `PASS` 即整条认证链路（含真发邮件）都通。邮件在 http://localhost:18025 查看。
+
+新模块的冒烟脚本放在 `scripts/smoke/`，按 `<模块名>-smoke.py` 命名，例如 `itinerary-smoke.py`。脚本应独立运行，通过真实 HTTP 验证一条核心流程，失败时返回非零退出码；不要连接生产环境。`scripts/run-smokes.py` 会按文件名顺序自动运行所有匹配 `*-smoke.py` 的文件，本地和 CI 使用同一个入口。CI 会先打包并运行冒烟测试，通过后再运行集成测试。
 
 ---
 
