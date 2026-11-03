@@ -1,0 +1,3 @@
+# Dependencies for scripts/run-smokes.py and scripts/smoke/*-smoke.py.
+# Current smoke tests use only the Python standard library.
+# Add third-party packages with pinned versions, for example: package==1.2.3

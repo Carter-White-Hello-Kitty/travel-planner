@@ -105,6 +105,16 @@ SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
 
 新模块的冒烟脚本放在 `scripts/smoke/`，按 `<模块名>-smoke.py` 命名，例如 `itinerary-smoke.py`。脚本应独立运行，通过真实 HTTP 验证一条核心流程，失败时返回非零退出码；不要连接生产环境。`scripts/run-smokes.py` 会按文件名顺序自动运行所有匹配 `*-smoke.py` 的文件，本地和 CI 使用同一个入口。CI 会先打包并运行冒烟测试，通过后再运行集成测试。
 
+冒烟测试的第三方 Python 依赖统一写在根目录的 `requirements-smoke.txt`，并固定版本；当前脚本只用标准库，所以文件暂时没有包。新增依赖时，把依赖声明和使用它的冒烟脚本放在同一个 PR。CI 会先安装该文件中的依赖，再运行冒烟测试。本地需要这些依赖时，在项目根目录创建独立环境并安装：
+
+```bash
+python3 -m venv .venv-smoke
+source .venv-smoke/bin/activate
+python -m pip install -r requirements-smoke.txt
+```
+
+激活后照常运行 `python3 scripts/run-smokes.py`；`.venv-smoke/` 已加入 `.gitignore`。
+
 ---
 
 ## 项目结构
