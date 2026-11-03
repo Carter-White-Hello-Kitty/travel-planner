@@ -62,7 +62,7 @@ Compose 启动一个 MySQL 容器和一个 Mailpit 容器；MySQL 容器内有�
 
 ---
 
-## 二、本地测试（跑自动化测试）
+## 二、本地测试
 
 ### 1. 启动本地依赖（若已在开发时启动，可跳过）
 
@@ -79,29 +79,31 @@ docker compose up -d --wait
 
 若本机 `53306` 端口已被占用，可在 `.env` 中修改 `DB_PORT`，再启动 Compose、Java 服务和 Maven 测试；三者会使用同一端口。Mailpit 的 `11025`、`18025` 端口也必须空闲；只运行集成测试时，可以只启动 `mysql` 服务。
 
-### 2. 跑测试
+### 2. 冒烟测试
+
+冒烟测试通过真实 HTTP 请求检查各模块的核心流程。先启动 Java 服务（`dev` profile，连接开发库 `travel_planner`），再另开终端运行所有冒烟脚本：
+
+```bash
+# 终端 1：启动后端，保持运行
+./mvnw spring-boot:run
+
+# 终端 2：运行所有冒烟脚本
+SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
+```
+
+所有脚本通过时，统一入口会输出 `PASS`；任一脚本失败会返回非零退出码。冒烟测试会操作开发库，涉及邮件的流程可在 Mailpit 的 `http://localhost:18025` 查看。
+
+### 3. 集成测试
+
+MySQL 容器启动后直接运行，不需要先启动 Java 服务：
 
 ```bash
 ./mvnw clean verify
 ```
 
-测试会连 Docker 的 `travel_planner_test`，不会清理开发库。认证集成测试在每个用例前核对库名，并清理其测试数据；目前共有 20 个认证测试。测试类按模块放在 `src/test/java/com/travel/<模块名>/`，具体约定见 `src/test/README.md`。
+测试使用 `test` profile，连接 Docker 中独立的 `travel_planner_test`，不会清理开发库。测试类按模块放在 `src/test/java/com/travel/<模块名>/`；各模块负责隔离和清理自己创建的测试数据，具体约定见 `src/test/README.md`。
 
----
-
-## 三、密码重置测试（可选）
-
-本地开发时，密码重置的邮件会发到 Docker 的 Mailpit：
-
-```bash
-# 终端 1：起服务
-./mvnw spring-boot:run
-
-# 终端 2：运行所有冒烟测试（认证测试覆盖注册 → 登录 → 刷新 → 重置 → 收邮件 → 登出）
-SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
-```
-
-输出 `PASS` 即整条认证链路（含真发邮件）都通。邮件在 http://localhost:18025 查看。
+### 4. 测试约定
 
 新模块的冒烟脚本放在 `scripts/smoke/`，按 `<模块名>-smoke.py` 命名，例如 `itinerary-smoke.py`。脚本应独立运行，通过真实 HTTP 验证一条核心流程，失败时返回非零退出码；不要连接生产环境。`scripts/run-smokes.py` 会按文件名顺序自动运行所有匹配 `*-smoke.py` 的文件，本地和 CI 使用同一个入口。CI 会先打包并运行冒烟测试，通过后再运行集成测试。
 
