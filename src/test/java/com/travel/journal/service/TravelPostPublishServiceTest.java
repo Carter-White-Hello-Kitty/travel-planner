@@ -6,6 +6,7 @@ import com.travel.itinerary.entity.Trip;
 import com.travel.auth.entity.User;
 import com.travel.journal.repository.TravelPostRepository;
 import com.travel.journal.vo.CreateTravelPostRequest;
+import com.travel.itinerary.entity.TripStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.util.Arrays;
@@ -14,6 +15,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,16 +37,16 @@ class TravelPostPublishServiceTest {
         events = mock(ApplicationEventPublisher.class);
         service = new TravelPostPublishServiceImpl(em, repository, JsonMapper.builder().build(), events);
         User owner = new User(); owner.setId(7L);
-        trip = new Trip(); trip.setId(12L); trip.setUser(owner); trip.setStatus("Completed");
+        trip = new Trip(); trip.setId(12L); trip.setUser(owner); trip.setStatus(TripStatus.COMPLETED.value());
         when(em.find(Trip.class, 12L, LockModeType.PESSIMISTIC_WRITE)).thenReturn(trip);
         when(repository.save(any(TravelPost.class))).thenAnswer(call -> {
             TravelPost post = call.getArgument(0); post.setId(50L); return post;
         });
     }
 
-    @ParameterizedTest @ValueSource(strings = {"Completed", "Cancelled"})
-    void savesFinishedTripAndNotifiesSearch(String status) {
-        trip.setStatus(status);
+    @ParameterizedTest @EnumSource(value = TripStatus.class, names = {"COMPLETED", "CANCELLED"})
+    void savesFinishedTripAndNotifiesSearch(TripStatus status) {
+        trip.setStatus(status.value());
         assertThat(service.publish(7L, new CreateTravelPostRequest(12L, "海边", List.of("https://example.com/a.jpg")))).isEqualTo(50L);
         var saved = ArgumentCaptor.forClass(TravelPost.class);
         verify(repository).save(saved.capture());
@@ -56,9 +58,9 @@ class TravelPostPublishServiceTest {
                 50L, 12L, "海边", List.of("https://example.com/a.jpg")));
     }
 
-    @ParameterizedTest @ValueSource(strings = {"Planning", "Ongoing"})
-    void rejectsUnfinishedTrip(String status) {
-        trip.setStatus(status);
+    @ParameterizedTest @EnumSource(value = TripStatus.class, names = {"PLANNING", "ONGOING"})
+    void rejectsUnfinishedTrip(TripStatus status) {
+        trip.setStatus(status.value());
         failure(7L, new CreateTravelPostRequest(12L, null, null), 409);
     }
 

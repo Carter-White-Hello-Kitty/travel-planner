@@ -1,7 +1,7 @@
 package com.travel.journal.service.impl;
 
 import com.travel.journal.service.TravelPostPublishService;
-
+import com.travel.itinerary.entity.TripStatus;
 import com.travel.journal.entity.TravelPost;
 import com.travel.itinerary.entity.Trip;
 import com.travel.journal.repository.TravelPostRepository;
@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.travel.common.ApiError;
 import tools.jackson.databind.ObjectMapper;
+
 
 @Service
 public class TravelPostPublishServiceImpl implements TravelPostPublishService {
@@ -47,7 +48,8 @@ public class TravelPostPublishServiceImpl implements TravelPostPublishService {
         if (trip.getUser() == null || !currentUserId.equals(trip.getUser().getId())) {
             throw new ApiError(HttpStatus.FORBIDDEN, "FORBIDDEN", "This trip belongs to another user.");
         }
-        if (!"Completed".equals(trip.getStatus()) && !"Cancelled".equals(trip.getStatus())) {
+        if (!TripStatus.COMPLETED.value().equals(trip.getStatus())
+                && !TripStatus.CANCELLED.value().equals(trip.getStatus())) {
             throw new ApiError(HttpStatus.CONFLICT, "TRIP_NOT_FINISHED",
                     "Only completed or cancelled trips can be posted.");
         }

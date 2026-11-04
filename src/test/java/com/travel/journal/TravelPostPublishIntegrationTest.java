@@ -4,13 +4,14 @@ import com.travel.auth.entity.User;
 import com.travel.auth.service.AuthService;
 import com.travel.itinerary.entity.Trip;
 import com.travel.itinerary.repository.TripRepository;
+import com.travel.itinerary.entity.TripStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -39,20 +40,18 @@ class TravelPostPublishIntegrationTest {
 
     @BeforeEach
     void setup() {
-        org.junit.jupiter.api.Assertions.assertTrue(
-                java.util.Set.of("travel_planner_auth_test", "travel_planner_test")
-                        .contains(db.queryForObject("SELECT DATABASE()", String.class))
-        );
+        assertEquals("travel_planner_test",
+                db.queryForObject("SELECT DATABASE()", String.class));
         String email = "journal-" + UUID.randomUUID() + "@example.com";
         owner = auth.register(email, "JournalPublish!2026");
         token = auth.login(email, "JournalPublish!2026", null).access().value();
     }
 
-    Trip trip(String status, User user) {
+    Trip trip(TripStatus status, User user) {
         Trip trip = new Trip();
         trip.setUser(user);
         trip.setName("Seattle weekend");
-        trip.setStatus(status);
+        trip.setStatus(status.value());
         trip.setDayCount(2);
         return trips.saveAndFlush(trip);
     }
@@ -72,8 +71,8 @@ class TravelPostPublishIntegrationTest {
     long count() { return db.queryForObject("SELECT COUNT(*) FROM travel_posts", Long.class); }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Completed", "Cancelled"})
-    void publishesAndStoresInMysql(String status) throws Exception {
+    @EnumSource(value = TripStatus.class, names = {"COMPLETED", "CANCELLED"})
+    void publishesAndStoresInMysql(TripStatus status) throws Exception {
         Trip trip = trip(status, owner);
         long before = count();
         MvcResult result = publish(Map.of("trip_id", trip.getId(), "content", "A great weekend in Seattle.",
@@ -90,8 +89,8 @@ class TravelPostPublishIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Planning", "Ongoing"})
-    void rejectsUnfinishedTripsWithoutSaving(String status) throws Exception {
+    @EnumSource(value = TripStatus.class, names = {"PLANNING", "ONGOING"})
+    void rejectsUnfinishedTripsWithoutSaving(TripStatus status) throws Exception {
         Trip trip = trip(status, owner);
         long before = count();
         assertEquals(409, publish(Map.of("trip_id", trip.getId()), token).getResponse().getStatus());
@@ -101,7 +100,7 @@ class TravelPostPublishIntegrationTest {
     @Test
     void rejectsOtherOwnersEvenWithForgedUserId() throws Exception {
         User other = auth.register("other-" + UUID.randomUUID() + "@example.com", "JournalPublish!2026");
-        Trip trip = trip("Completed", other);
+        Trip trip = trip(TripStatus.COMPLETED, other);
         long before = count();
         assertEquals(403, publish(Map.of("trip_id", trip.getId(), "user_id", other.getId()), token).getResponse().getStatus());
         assertEquals(before, count());
@@ -114,7 +113,7 @@ class TravelPostPublishIntegrationTest {
 
     @Test
     void requiresRealAccessToken() throws Exception {
-        Trip trip = trip("Completed", owner);
+        Trip trip = trip(TripStatus.COMPLETED, owner);
         long before = count();
         assertEquals(401, publish(Map.of("trip_id", trip.getId()), null).getResponse().getStatus());
         assertEquals(401, publish(Map.of("trip_id", trip.getId()), "invalid-token").getResponse().getStatus());
@@ -128,14 +127,14 @@ class TravelPostPublishIntegrationTest {
 
     @Test
     void rejectsInvalidPhotos() throws Exception {
-        Trip trip = trip("Completed", owner);
+        Trip trip = trip(TripStatus.COMPLETED, owner);
         assertEquals(400, publish(Map.of("trip_id", trip.getId(), "photos", List.of("file:///tmp/photo.jpg")), token)
                 .getResponse().getStatus());
     }
 
     @Test
     void allowsOptionalFields() throws Exception {
-        Trip trip = trip("Completed", owner);
+        Trip trip = trip(TripStatus.COMPLETED, owner);
         MvcResult result = publish(Map.of("trip_id", trip.getId()), token);
         assertEquals(201, result.getResponse().getStatus());
         long id = json.readTree(result.getResponse().getContentAsString()).path("data").path("id").asLong();
@@ -144,7 +143,7 @@ class TravelPostPublishIntegrationTest {
 
     @Test
     void requiresCsrfWithoutSaving() throws Exception {
-        Trip trip = trip("Completed", owner);
+        Trip trip = trip(TripStatus.COMPLETED, owner);
         long before = count();
         MvcResult result = mvc.perform(post("/travel-posts").header("Authorization", "Bearer " + token)
                 .contentType("application/json").content("{\"trip_id\":" + trip.getId() + "}")).andReturn();
