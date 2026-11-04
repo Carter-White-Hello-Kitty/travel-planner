@@ -53,3 +53,4 @@ secrets/
 application-local.yaml
 application-local.yml
 application-local.properties
+scripts/live/poi-search-result.json
