@@ -7,6 +7,8 @@ import com.travel.itinerary.entity.Trip;
 import com.travel.itinerary.entity.TripStatus;
 import com.travel.itinerary.repository.TripRepository;
 import com.travel.itinerary.service.TripService;
+import com.travel.itinerary.vo.TripSummary;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,14 @@ public class TripServiceImpl implements TripService {
 
     public TripServiceImpl(TripRepository tripRepository) {
         this.tripRepository = tripRepository;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TripSummary> list(TokenService.Identity identity) {
+        if (identity == null)
+            throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
+        return tripRepository.findSummariesByUserId(identity.userId());
     }
 
     @Override
