@@ -121,6 +121,8 @@ python -m pip install -r requirements-smoke.txt
 
 ## 项目结构
 
+POI 搜索的配置、认证请求和测试步骤见 [POI_SEARCH.md](POI_SEARCH.md)。
+
 ```
 com.travel
 ├── common/          # 共享内核：Result、ApiError、ApiSupport、GlobalExceptionHandler
