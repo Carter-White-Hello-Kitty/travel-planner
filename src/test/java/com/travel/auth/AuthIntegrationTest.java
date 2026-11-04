@@ -80,7 +80,7 @@ class AuthIntegrationTest {
   @BeforeEach
   void clean() {
     String name = db.queryForObject("SELECT DATABASE()", String.class);
-    if (!"travel_planner_auth_test".equals(name))
+    if (!"travel_planner_test".equals(name))
       throw new IllegalStateException("Refusing to clean a non-test database");
     for (String table :
         List.of(

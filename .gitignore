@@ -48,7 +48,9 @@ logs/
 .env
 .env.*
 !.env.example
+.venv-smoke/
 secrets/
 application-local.yaml
 application-local.yml
 application-local.properties
+scripts/live/poi-search-result.json
