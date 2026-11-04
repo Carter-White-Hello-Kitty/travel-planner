@@ -9,6 +9,7 @@ import java.net.*;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.*;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -55,7 +56,8 @@ class GooglePlacesClientTest {
     body = """
         {"places":[{"id":"google-id","displayName":{"text":"Museum"},
         "formattedAddress":"Baltimore","location":{"latitude":39.33,"longitude":-76.62},
-        "primaryType":"museum","rating":4.7}]}
+        "primaryType":"museum","types":["museum","tourist_attraction"],
+        "rating":4.7,"userRatingCount":1200,"businessStatus":"OPERATIONAL"}]}
         """;
     var places = client.search(request);
     var sent = JsonMapper.builder().build().readTree(requestBody);
@@ -63,7 +65,9 @@ class GooglePlacesClientTest {
     assertEquals(5000, sent.path("locationBias").path("circle").path("radius").asInt());
     assertEquals(39.3299, sent.path("locationBias").path("circle").path("center").path("latitude").asDouble());
     assertEquals(20, sent.path("pageSize").asInt());
-    assertEquals(GooglePlacesClient.FIELD_MASK, fieldMask);
+    assertEquals("places.id,places.displayName,places.formattedAddress,places.location,"
+        + "places.primaryType,places.types,places.rating,places.userRatingCount,"
+        + "places.businessStatus", fieldMask);
     assertEquals("fake-test-key", key);
     assertNull(places.get(0).id());
     assertEquals("google-id", places.get(0).googlePlaceId());
@@ -71,6 +75,10 @@ class GooglePlacesClientTest {
     assertEquals("Baltimore", places.get(0).address());
     assertEquals("museum", places.get(0).category());
     assertEquals(4.7, places.get(0).rating());
+    assertEquals("museum", places.get(0).primaryType());
+    assertEquals(List.of("museum", "tourist_attraction"), places.get(0).types());
+    assertEquals(1200L, places.get(0).userRatingCount());
+    assertEquals("OPERATIONAL", places.get(0).businessStatus());
   }
 
   @Test
@@ -84,6 +92,10 @@ class GooglePlacesClientTest {
     var place = client.search(request).get(0);
     assertEquals("park", place.category());
     assertNull(place.rating());
+    assertNull(place.primaryType());
+    assertEquals(List.of("park"), place.types());
+    assertNull(place.userRatingCount());
+    assertNull(place.businessStatus());
   }
 
   @Test
@@ -98,6 +110,13 @@ class GooglePlacesClientTest {
     for (String invalid : new String[] {"not-json", "null", "[]", "{\"error\":{}}",
         "{\"places\":null}", "{\"places\":[{\"id\":\"x\"}]}"}) {
       body = invalid;
+      assertEquals("POI_SEARCH_UPSTREAM_ERROR",
+          assertThrows(ApiError.class, () -> client.search(request)).code);
+    }
+    for (String invalidField : new String[] {
+        "\"types\":\"museum\"", "\"userRatingCount\":-1", "\"userRatingCount\":1.5"}) {
+      body = "{\"places\":[{\"id\":\"x\",\"location\":{\"latitude\":0,\"longitude\":0},"
+          + invalidField + "}]}";
       assertEquals("POI_SEARCH_UPSTREAM_ERROR",
           assertThrows(ApiError.class, () -> client.search(request)).code);
     }

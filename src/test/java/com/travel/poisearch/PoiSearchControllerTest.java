@@ -77,10 +77,15 @@ class PoiSearchControllerTest {
   @Test
   void returnsTeamEnvelopeAndNullId() throws Exception {
     when(google.search(any())).thenReturn(List.of(new PoiVO(null, "place-id", "Museum", "Baltimore",
-        39.33, -76.62, "museum", 4.5)));
+        39.33, -76.62, "museum", 4.5, "museum", List.of("museum", "tourist_attraction"),
+        1200L, "OPERATIONAL")));
     String body = mvc.perform(search(BODY)).andExpect(status().isOk())
         .andExpect(jsonPath("$.message").value("POIs retrieved successfully"))
         .andExpect(jsonPath("$.data.pois[0].googlePlaceId").value("place-id"))
+        .andExpect(jsonPath("$.data.pois[0].primaryType").value("museum"))
+        .andExpect(jsonPath("$.data.pois[0].types[1]").value("tourist_attraction"))
+        .andExpect(jsonPath("$.data.pois[0].userRatingCount").value(1200))
+        .andExpect(jsonPath("$.data.pois[0].businessStatus").value("OPERATIONAL"))
         .andReturn().getResponse().getContentAsString();
     var json = JsonMapper.builder().build().readTree(body);
     assertTrue(json.path("data").path("pois").get(0).has("id"));

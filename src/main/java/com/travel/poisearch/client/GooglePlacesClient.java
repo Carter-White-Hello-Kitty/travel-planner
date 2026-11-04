@@ -21,7 +21,8 @@ import tools.jackson.databind.json.JsonMapper;
 public class GooglePlacesClient {
   private static final URI ENDPOINT = URI.create("https://places.googleapis.com/v1/places:searchText");
   static final String FIELD_MASK = "places.id,places.displayName,places.formattedAddress,"
-      + "places.location,places.primaryType,places.types,places.rating";
+      + "places.location,places.primaryType,places.types,places.rating,"
+      + "places.userRatingCount,places.businessStatus";
   private final HttpClient http;
   private final URI endpoint;
   private final String apiKey;
@@ -92,12 +93,12 @@ public class GooglePlacesClient {
       Double lat = number(location, "latitude"), lon = number(location, "longitude");
       if (id == null || lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180)
         throw upstreamError();
-      String category = text(place, "primaryType");
-      JsonNode types = place.path("types");
-      if (category == null && types.isArray() && !types.isEmpty() && types.get(0).isString())
-        category = types.get(0).asString();
+      String primaryType = text(place, "primaryType");
+      List<String> types = types(place);
+      String category = primaryType != null ? primaryType : types.isEmpty() ? null : types.get(0);
       result.add(new PoiVO(null, id, text(place.path("displayName"), "text"),
-          text(place, "formattedAddress"), lat, lon, category, number(place, "rating")));
+          text(place, "formattedAddress"), lat, lon, category, number(place, "rating"),
+          primaryType, types, count(place, "userRatingCount"), text(place, "businessStatus")));
     }
     return List.copyOf(result);
   }
@@ -113,6 +114,26 @@ public class GooglePlacesClient {
     double n = value.asDouble();
     if (!Double.isFinite(n)) throw upstreamError();
     return n;
+  }
+
+  private static List<String> types(JsonNode place) {
+    JsonNode values = place.get("types");
+    if (values == null) return List.of();
+    if (!values.isArray()) throw upstreamError();
+    List<String> result = new ArrayList<>();
+    for (JsonNode value : values) {
+      if (!value.isString()) throw upstreamError();
+      result.add(value.asString());
+    }
+    return List.copyOf(result);
+  }
+
+  private static Long count(JsonNode node, String field) {
+    JsonNode value = node.get(field);
+    if (value == null) return null;
+    if (!value.isIntegralNumber() || !value.canConvertToLong() || value.asLong() < 0)
+      throw upstreamError();
+    return value.asLong();
   }
 
   private static ApiError upstreamError() {
