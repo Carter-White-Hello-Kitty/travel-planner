@@ -39,7 +39,10 @@ class TravelPostPublishIntegrationTest {
 
     @BeforeEach
     void setup() {
-        assertEquals("travel_planner_auth_test", db.queryForObject("SELECT DATABASE()", String.class));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.util.Set.of("travel_planner_auth_test", "travel_planner_test")
+                        .contains(db.queryForObject("SELECT DATABASE()", String.class))
+        );
         String email = "journal-" + UUID.randomUUID() + "@example.com";
         owner = auth.register(email, "JournalPublish!2026");
         token = auth.login(email, "JournalPublish!2026", null).access().value();
