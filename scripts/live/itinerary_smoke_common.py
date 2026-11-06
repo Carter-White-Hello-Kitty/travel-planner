@@ -32,7 +32,7 @@ class SmokeClient:
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
         )
 
-    def call(self, path, body=None, token=None, expected=200):
+    def call(self, path, body=None, token=None, expected=200, idempotency_key=None):
         headers = {"Origin": "http://localhost:3000", "Accept": "application/json"}
         if body is not None:
             headers.update({
@@ -40,6 +40,8 @@ class SmokeClient:
                 "X-Requested-With": "XMLHttpRequest",
                 "X-XSRF-TOKEN": self.call("/auth/csrf")["data"]["token"],
             })
+            if path == "/trips":
+                headers["Idempotency-Key"] = idempotency_key or str(uuid.uuid4())
         if token:
             headers["Authorization"] = "Bearer " + token
         request = urllib.request.Request(
@@ -95,8 +97,11 @@ class SmokeClient:
             usable.append(poi)
         return usable
 
-    def generate_and_verify(self, token, request):
-        response = self.call("/trips", request, token=token, expected=201)
+    def generate_and_verify(self, token, request, idempotency_key=None,
+                            check_conflict=False):
+        request_id = idempotency_key or str(uuid.uuid4())
+        response = self.call("/trips", request, token=token, expected=201,
+                             idempotency_key=request_id)
         data = response.get("data")
         if response.get("message") != "success" or not isinstance(data, dict):
             raise AssertionError("/trips returned an invalid success response")
@@ -129,11 +134,27 @@ class SmokeClient:
                     raise AssertionError("Generated POI is incomplete or duplicated")
                 seen.add(place_id)
 
+        replay = self.call("/trips", request, token=token, expected=201,
+                           idempotency_key=request_id)
+        if replay != response or replay.get("data", {}).get("tripId") != data["tripId"]:
+            raise AssertionError("Same Idempotency-Key and body did not replay the original trip")
+
+        if check_conflict:
+            changed = {**request, "name": request["name"] + " changed"}
+            conflict = self.call("/trips", changed, token=token, expected=409,
+                                 idempotency_key=request_id)
+            error = conflict.get("error")
+            if not isinstance(error, dict) or error.get("code") != "IDEMPOTENCY_KEY_REUSED":
+                raise AssertionError("Same Idempotency-Key with changed body did not conflict")
+
         listed = self.call("/trips", token=token).get("data")
-        if not isinstance(listed, list) or not any(
-                item.get("tripId") == data["tripId"] and item.get("status") == "Planning"
-                for item in listed if isinstance(item, dict)):
-            raise AssertionError("Generated trip was not found in the saved trip list")
+        if not isinstance(listed, list):
+            raise AssertionError("/trips did not return a saved trip list")
+        matching = [item for item in listed if isinstance(item, dict)
+                    and item.get("name") == request["name"]]
+        if (len(matching) != 1 or matching[0].get("tripId") != data["tripId"]
+                or matching[0].get("status") != "Planning"):
+            raise AssertionError("Idempotent generation did not leave exactly one matching trip")
         return response
 
 

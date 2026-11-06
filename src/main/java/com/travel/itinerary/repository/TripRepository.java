@@ -14,6 +14,8 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     List<Trip> findByUserIdOrderByIdDesc(Long userId);
 
+    Optional<Trip> findByIdAndUserId(Long id, Long userId);
+
     /** Loads a trip with a row lock so concurrent status changes run one at a time. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from Trip t where t.id = :id")

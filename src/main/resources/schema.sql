@@ -48,6 +48,19 @@ CREATE TABLE IF NOT EXISTS trip_pois
     status          VARCHAR(20) NOT NULL DEFAULT 'Planned'
 );
 
+CREATE TABLE IF NOT EXISTS trip_generation_requests
+(
+    id           BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id      BIGINT NOT NULL,
+    request_id   CHAR(36) NOT NULL,
+    request_hash CHAR(64) NOT NULL,
+    trip_id      BIGINT NOT NULL,
+    created_at   DATETIME(6) NOT NULL,
+    CONSTRAINT uq_trip_generation_user_request UNIQUE (user_id, request_id),
+    FOREIGN KEY (user_id) REFERENCES users (id),
+    FOREIGN KEY (trip_id) REFERENCES trips (id)
+);
+
 CREATE TABLE IF NOT EXISTS travel_posts
 (
     id      BIGINT PRIMARY KEY AUTO_INCREMENT,

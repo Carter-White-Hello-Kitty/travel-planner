@@ -29,14 +29,18 @@ import com.travel.poisearch.vo.PoiVO;
 import jakarta.persistence.EntityManager;
 import jakarta.validation.ConstraintViolationException;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 /** Real service and JPA persistence; only Google-dependent calls are mocked. */
 @SpringBootTest
@@ -50,6 +54,15 @@ class TripGenerationIntegrationTest {
     @Autowired EntityManager entityManager;
     @MockitoBean GooglePlacesClient google;
     @MockitoBean PoiSearchService search;
+    @MockitoBean StringRedisTemplate redis;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void mockRedis() {
+        ValueOperations<String, String> values = org.mockito.Mockito.mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
+    }
 
     @Test
     void mustVisitModeDerivesAreaAndSavesOrderedPlanningTrip() {
@@ -61,13 +74,13 @@ class TripGenerationIntegrationTest {
         when(google.details(b.googlePlaceId())).thenReturn(b);
         when(search.search(any())).thenReturn(List.of(c));
 
-        GeneratedTrip result = service.generate(identity(userId), new GenerateTripRequest(
+        GeneratedTrip result = service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
                 "New York Trip", LocalDate.of(2026, 12, 1), 2, null,
                 new GenerateTripRequest.Constraints(2, List.of("museum")),
                 List.of(new GenerateTripRequest.Day(1, List.of(
                                 new GenerateTripRequest.MustVisitPoi(a.googlePlaceId()),
                                 new GenerateTripRequest.MustVisitPoi(b.googlePlaceId()))),
-                        new GenerateTripRequest.Day(2, List.of()))));
+                        new GenerateTripRequest.Day(2, List.of())))).trip();
 
         assertEquals("Planning", result.status());
         assertEquals(LocalDate.of(2026, 12, 1), result.startDate());
@@ -105,9 +118,9 @@ class TripGenerationIntegrationTest {
         when(search.search(any())).thenReturn(List.of(a, b));
         var area = new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000);
 
-        GeneratedTrip result = service.generate(identity(userId), new GenerateTripRequest(
+        GeneratedTrip result = service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
                 "City trip", LocalDate.of(2026, 12, 1), 2, area,
-                new GenerateTripRequest.Constraints(2, List.of("museum")), null));
+                new GenerateTripRequest.Constraints(2, List.of("museum")), null)).trip();
 
         assertEquals(2, result.tripDays().size());
         assertEquals(1, result.tripDays().get(0).tripPois().size());
@@ -128,7 +141,7 @@ class TripGenerationIntegrationTest {
         when(google.details(b.googlePlaceId())).thenReturn(b);
         when(search.search(any())).thenReturn(List.of());
 
-        service.generate(identity(userId), new GenerateTripRequest("Two places",
+        service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest("Two places",
                 LocalDate.of(2026, 12, 1), 2, null,
                 new GenerateTripRequest.Constraints(1, List.of()),
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(a.googlePlaceId()))),
@@ -146,7 +159,7 @@ class TripGenerationIntegrationTest {
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 0),
                 new GenerateTripRequest.Constraints(2, List.of()), null);
 
-        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), request));
+        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
         verifyNoInteractions(google, search);
     }
 
@@ -159,7 +172,7 @@ class TripGenerationIntegrationTest {
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(id))),
                         new GenerateTripRequest.Day(2, List.of(new GenerateTripRequest.MustVisitPoi(id)))));
 
-        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), request));
+        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
         verifyNoInteractions(google, search);
     }
 
@@ -175,7 +188,7 @@ class TripGenerationIntegrationTest {
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(a.googlePlaceId()))),
                         new GenerateTripRequest.Day(2, List.of(new GenerateTripRequest.MustVisitPoi(b.googlePlaceId())))));
 
-        ApiError error = assertThrows(ApiError.class, () -> service.generate(identity(userId), request));
+        ApiError error = assertThrows(ApiError.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
         assertEquals("INVALID_REQUEST", error.code);
         verifyNoInteractions(search);
         assertTrue(trips.findByUserIdOrderByIdDesc(userId).isEmpty());

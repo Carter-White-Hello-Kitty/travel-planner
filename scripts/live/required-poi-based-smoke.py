@@ -41,7 +41,7 @@ def main():
     print("Required Google POIs:")
     for day, poi in ((1, selected[0]), (1, selected[1]), (3, selected[2])):
         print(f"  Day {day}: {poi.get('name')} ({poi['googlePlaceId']})")
-    print(f"PASS: required-POI trip #{response['data']['tripId']} preserved the requested days and order")
+    print(f"PASS: required-POI trip #{response['data']['tripId']} preserved the requested days and order; replay verified")
     print(f"Saved response: {path}")
 
 

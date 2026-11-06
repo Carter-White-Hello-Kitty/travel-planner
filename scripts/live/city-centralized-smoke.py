@@ -16,9 +16,9 @@ def main():
         "searchArea": {**CITY_CENTER, "radiusMeters": 15000},
         "constraints": {"maxPoisPerDay": 3, "preferredTypes": []},
     }
-    response = client.generate_and_verify(token, request)
+    response = client.generate_and_verify(token, request, check_conflict=True)
     path = save_response("city-centralized.json", response)
-    print(f"PASS: city-based trip #{response['data']['tripId']} has three saved days")
+    print(f"PASS: city-based trip #{response['data']['tripId']} has three saved days; replay and conflict verified")
     print(f"Saved response: {path}")
 
 

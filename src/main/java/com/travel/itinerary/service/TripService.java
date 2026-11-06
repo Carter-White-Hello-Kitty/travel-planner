@@ -12,7 +12,11 @@ import java.util.List;
 public interface TripService {
 
     /** Plans from either a city area or required places, then saves one Planning trip. */
-    GeneratedTrip generate(TokenService.Identity identity, @NotNull @Valid GenerateTripRequest request);
+    GenerationOutcome generate(TokenService.Identity identity, String requestId,
+            @NotNull @Valid GenerateTripRequest request);
+
+    /** PROCESSING has no trip yet; completed requests return the same saved trip. */
+    record GenerationOutcome(GeneratedTrip trip, boolean processing) {}
 
     /** Lists only the authenticated user's trips without loading days or POIs. */
     List<TripSummary> list(TokenService.Identity identity);
