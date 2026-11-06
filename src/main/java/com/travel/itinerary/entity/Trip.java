@@ -3,6 +3,7 @@ package com.travel.itinerary.entity;
 import com.travel.auth.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -46,6 +47,11 @@ public class Trip {
     @Column(name = "start_date")
     private LocalDate startDate;
 
-    @OneToMany(mappedBy = "trip")
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.PERSIST)
     private List<TripDay> tripDays = new ArrayList<>();
+
+    public void addDay(TripDay day) {
+        tripDays.add(day);
+        day.setTrip(this);
+    }
 }

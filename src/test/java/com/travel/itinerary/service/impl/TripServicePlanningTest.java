@@ -52,7 +52,7 @@ class TripServicePlanningTest {
     }
 
     private static PoiVO poi(String id, double latitude, double longitude, double rating, long count) {
-        return new PoiVO(null, id, id, "Example", latitude, longitude,
+        return new PoiVO(id, id, "Example", latitude, longitude,
                 "museum", rating, "museum", List.of("museum"), count, "OPERATIONAL");
     }
 }

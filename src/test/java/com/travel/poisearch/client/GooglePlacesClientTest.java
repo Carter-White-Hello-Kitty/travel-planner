@@ -77,7 +77,6 @@ class GooglePlacesClientTest {
         + "places.primaryType,places.types,places.rating,places.userRatingCount,"
         + "places.businessStatus", fieldMask);
     assertEquals("fake-test-key", key);
-    assertNull(places.get(0).id());
     assertEquals("google-id", places.get(0).googlePlaceId());
     assertEquals("Museum", places.get(0).name());
     assertEquals("Baltimore", places.get(0).address());

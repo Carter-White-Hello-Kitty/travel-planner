@@ -140,7 +140,7 @@ public class GooglePlacesClient {
     String primaryType = text(place, "primaryType");
     List<String> types = types(place);
     String category = primaryType != null ? primaryType : types.isEmpty() ? null : types.get(0);
-    return new PoiVO(null, id, text(place.path("displayName"), "text"),
+    return new PoiVO(id, text(place.path("displayName"), "text"),
         text(place, "formattedAddress"), lat, lon, category, number(place, "rating"),
         primaryType, types, count(place, "userRatingCount"), text(place, "businessStatus"));
   }

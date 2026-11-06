@@ -93,7 +93,7 @@ class TripGenerationIntegrationTest {
         List<TripPoi> firstDayPois = tripPois.findByTripDayIdOrderBySequenceAsc(savedDays.get(0).getId());
         assertEquals(List.of(1, 2), firstDayPois.stream().map(TripPoi::getSequence).toList());
         assertEquals(List.of(a.googlePlaceId(), b.googlePlaceId()),
-                firstDayPois.stream().map(tp -> tp.getPoi().getGooglePlaceId()).toList());
+                firstDayPois.stream().map(TripPoi::getGooglePlaceId).toList());
         assertEquals(TripPoiStatus.PLANNED, firstDayPois.get(0).getStatus());
     }
 
@@ -187,7 +187,7 @@ class TripGenerationIntegrationTest {
 
     private static PoiVO poi(String suffix, double lat, double lon) {
         String id = "trip-gen-" + UUID.randomUUID() + "-" + suffix;
-        return new PoiVO(null, id, "Place " + suffix, "New York, NY", lat, lon,
+        return new PoiVO(id, "Place " + suffix, "New York, NY", lat, lon,
                 "museum", 4.7, "museum", List.of("museum"), 1200L, "OPERATIONAL");
     }
 

@@ -13,19 +13,13 @@ CREATE TABLE IF NOT EXISTS pwd_reset_tokens
     expires_at DATETIME   NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS pois
-(
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
-    google_place_id VARCHAR(225) NOT NULL UNIQUE
-);
-
 CREATE TABLE IF NOT EXISTS wishlist
 (
-    id         BIGINT PRIMARY KEY AUTO_INCREMENT,
-    user_id    BIGINT NOT NULL REFERENCES users (id),
-    poi_id     BIGINT NOT NULL REFERENCES pois (id),
-    created_at DATETIME   NOT NULL,
-    CONSTRAINT uq_wishlist_user_poi UNIQUE (user_id, poi_id)
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id         BIGINT NOT NULL REFERENCES users (id),
+    google_place_id VARCHAR(225) NOT NULL,
+    created_at      DATETIME NOT NULL,
+    CONSTRAINT uq_wishlist_user_google_place UNIQUE (user_id, google_place_id)
 );
 
 CREATE TABLE IF NOT EXISTS trips
@@ -47,11 +41,11 @@ CREATE TABLE IF NOT EXISTS trip_days
 
 CREATE TABLE IF NOT EXISTS trip_pois
 (
-    id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-    trip_day_id BIGINT      NOT NULL REFERENCES trip_days (id),
-    poi_id      BIGINT      NOT NULL REFERENCES pois (id),
-    sequence  INTEGER     NOT NULL CHECK (sequence > 0),
-    status      VARCHAR(20) NOT NULL DEFAULT 'Planned'
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    trip_day_id     BIGINT NOT NULL REFERENCES trip_days (id),
+    google_place_id VARCHAR(225) NOT NULL,
+    sequence        INTEGER NOT NULL CHECK (sequence > 0),
+    status          VARCHAR(20) NOT NULL DEFAULT 'Planned'
 );
 
 CREATE TABLE IF NOT EXISTS travel_posts

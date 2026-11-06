@@ -10,16 +10,12 @@ import com.travel.itinerary.entity.TripDay;
 import com.travel.itinerary.entity.TripPoi;
 import com.travel.itinerary.entity.TripPoiStatus;
 import com.travel.itinerary.entity.TripStatus;
-import com.travel.itinerary.repository.TripDayRepository;
-import com.travel.itinerary.repository.TripPoiRepository;
 import com.travel.itinerary.repository.TripRepository;
 import com.travel.itinerary.service.TripService;
 import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
 import com.travel.itinerary.vo.TripSummary;
 import com.travel.poisearch.client.GooglePlacesClient;
-import com.travel.poisearch.entity.Poi;
-import com.travel.poisearch.repository.PoiRepository;
 import com.travel.poisearch.service.PoiSearchService;
 import com.travel.poisearch.vo.PoiSearchRequest;
 import com.travel.poisearch.vo.PoiVO;
@@ -47,22 +43,15 @@ public class TripServiceImpl implements TripService {
     private static final double EARTH_RADIUS_KM = 6371.0088;
 
     private final TripRepository tripRepository;
-    private final TripDayRepository dayRepository;
-    private final TripPoiRepository tripPoiRepository;
-    private final PoiRepository poiRepository;
     private final UserRepository userRepository;
     private final GooglePlacesClient google;
     private final PoiSearchService search;
     private final TransactionTemplate transactions;
 
-    public TripServiceImpl(TripRepository tripRepository, TripDayRepository dayRepository,
-            TripPoiRepository tripPoiRepository, PoiRepository poiRepository,
-            UserRepository userRepository, GooglePlacesClient google, PoiSearchService search,
+    public TripServiceImpl(TripRepository tripRepository, UserRepository userRepository,
+            GooglePlacesClient google, PoiSearchService search,
             PlatformTransactionManager transactionManager) {
         this.tripRepository = tripRepository;
-        this.dayRepository = dayRepository;
-        this.tripPoiRepository = tripPoiRepository;
-        this.poiRepository = poiRepository;
         this.userRepository = userRepository;
         this.google = google;
         this.search = search;
@@ -119,29 +108,29 @@ public class TripServiceImpl implements TripService {
         trip.setStartDate(request.startDate());
         trip.setDayCount(plan.size());
         trip.setStatus(TripStatus.PLANNING);
-        tripRepository.save(trip);
-
-        List<GeneratedTrip.Day> resultDays = new ArrayList<>();
         for (int dayIndex = 0; dayIndex < plan.size(); dayIndex++) {
             TripDay day = new TripDay();
-            day.setTrip(trip);
             day.setDayNumber(dayIndex + 1);
-            dayRepository.save(day);
+            trip.addDay(day);
 
-            List<GeneratedTrip.Poi> resultPois = new ArrayList<>();
             for (int position = 0; position < plan.get(dayIndex).size(); position++) {
                 PoiVO info = plan.get(dayIndex).get(position);
-                Poi poi = poiRepository.findByGooglePlaceId(info.googlePlaceId()).orElseGet(() -> {
-                    Poi created = new Poi();
-                    created.setGooglePlaceId(info.googlePlaceId());
-                    return poiRepository.save(created);
-                });
                 TripPoi tripPoi = new TripPoi();
-                tripPoi.setTripDay(day);
-                tripPoi.setPoi(poi);
+                tripPoi.setGooglePlaceId(info.googlePlaceId());
                 tripPoi.setSequence(position + 1);
                 tripPoi.setStatus(TripPoiStatus.PLANNED);
-                tripPoiRepository.save(tripPoi);
+                day.addPoi(tripPoi);
+            }
+        }
+
+        tripRepository.save(trip);
+        List<GeneratedTrip.Day> resultDays = new ArrayList<>();
+        for (int dayIndex = 0; dayIndex < plan.size(); dayIndex++) {
+            List<GeneratedTrip.Poi> resultPois = new ArrayList<>();
+            List<TripPoi> savedPois = trip.getTripDays().get(dayIndex).getTripPois();
+            for (int position = 0; position < savedPois.size(); position++) {
+                TripPoi tripPoi = savedPois.get(position);
+                PoiVO info = plan.get(dayIndex).get(position);
                 resultPois.add(new GeneratedTrip.Poi(tripPoi.getId(), info.googlePlaceId(),
                         info.name(), info.address(), info.latitude(), info.longitude(),
                         tripPoi.getStatus().value()));

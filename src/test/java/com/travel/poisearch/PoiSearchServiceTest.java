@@ -15,7 +15,7 @@ class PoiSearchServiceTest {
   final PoiSearchServiceImpl service = new PoiSearchServiceImpl(google);
 
   PoiVO place(String id, double lat, double lon) {
-    return new PoiVO(null, id, "Museum", "Address", lat, lon, "museum", null,
+    return new PoiVO(id, "Museum", "Address", lat, lon, "museum", null,
         "museum", List.of("museum", "tourist_attraction"), null, "OPERATIONAL");
   }
 
