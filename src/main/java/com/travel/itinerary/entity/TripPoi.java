@@ -2,6 +2,7 @@ package com.travel.itinerary.entity;
 
 import com.travel.poisearch.entity.Poi;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -35,5 +36,6 @@ public class TripPoi {
     private Integer sequence;
 
     @Column(nullable = false, length = 20)
-    private String status = "Planned";
+    @Convert(converter = TripPoiStatusConverter.class)
+    private TripPoiStatus status = TripPoiStatus.PLANNED;
 }

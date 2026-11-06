@@ -169,7 +169,7 @@ class TripLifecycleIntegrationTest {
         trip.setUser(userRepository.findByEmail(ownerEmail).orElseThrow());
         trip.setName("Hello New York");
         trip.setDayCount(1);
-        trip.setStatus(status.value());
+        trip.setStatus(status);
         return tripRepository.save(trip).getId();
     }
 

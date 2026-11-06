@@ -34,13 +34,15 @@ CREATE TABLE IF NOT EXISTS trips
     user_id   BIGINT      NOT NULL REFERENCES users (id),
     name      VARCHAR(255) NOT NULL,
     status    VARCHAR(20) NOT NULL,
-    day_count INTEGER     NOT NULL
+    day_count INTEGER     NOT NULL,
+    start_date DATE NULL
 );
 
 CREATE TABLE IF NOT EXISTS trip_days
 (
     id      BIGINT PRIMARY KEY AUTO_INCREMENT,
-    trip_id BIGINT NOT NULL REFERENCES trips (id)
+    trip_id BIGINT NOT NULL REFERENCES trips (id),
+    day_number INTEGER NULL
 );
 
 CREATE TABLE IF NOT EXISTS trip_pois

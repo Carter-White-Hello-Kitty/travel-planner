@@ -1,6 +1,7 @@
 package com.travel.itinerary.entity;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.Column;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,6 +29,9 @@ public class TripDay {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
+
+    @Column(name = "day_number")
+    private Integer dayNumber;
 
     @OneToMany(mappedBy = "tripDay")
     private List<TripPoi> tripPois = new ArrayList<>();
