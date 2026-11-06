@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -32,6 +33,18 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public void json(Exception e, HttpServletResponse r) throws java.io.IOException {
     api.write(r, new ApiError(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Invalid JSON request"));
+  }
+
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  public void validation(MethodArgumentNotValidException e, HttpServletResponse r) throws java.io.IOException {
+    var error = e.getBindingResult().getAllErrors().stream().findFirst();
+    String field = error.filter(org.springframework.validation.FieldError.class::isInstance)
+        .map(org.springframework.validation.FieldError.class::cast)
+        .map(org.springframework.validation.FieldError::getField)
+        .orElse("body");
+    String reason = error.map(org.springframework.validation.ObjectError::getDefaultMessage)
+        .orElse("Invalid request body");
+    api.write(r, ApiError.invalid(field, reason));
   }
 
   @ExceptionHandler(Exception.class)

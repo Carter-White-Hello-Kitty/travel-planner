@@ -161,9 +161,24 @@ class TripLifecycleIntegrationTest {
         assertError(response, 401, "AUTH_REQUIRED");
     }
 
+    @Test
+    void generationRejectsInvalidRequestBeforeSaving() throws Exception {
+        MockHttpServletResponse response = mvc.perform(withCsrf(post("/trips"))
+                .header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json")
+                .content("""
+                        {"name":"Invalid trip","startDate":"2026-12-01","dayCount":0,
+                         "searchArea":{"latitude":40.758,"longitude":-73.9855,"radiusMeters":15000},
+                         "constraints":{"maxPoisPerDay":3,"preferredTypes":[]}}
+                        """)).andReturn().getResponse();
+
+        assertError(response, 400, "INVALID_REQUEST");
+        assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips", Long.class));
+    }
+
     // ---- helpers ----
 
-    /** Saves a trip directly; POST /trips does not exist yet. */
+    /** Saves a trip directly so lifecycle tests do not depend on Google Places. */
     Long trip(String ownerEmail, TripStatus status) {
         Trip trip = new Trip();
         trip.setUser(userRepository.findByEmail(ownerEmail).orElseThrow());
