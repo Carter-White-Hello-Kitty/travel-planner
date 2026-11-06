@@ -110,11 +110,9 @@ public class GooglePlacesClient {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw upstreamError();
-    } catch (IOException e) {
-      throw upstreamError();
     } catch (ApiError e) {
       throw e;
-    } catch (RuntimeException e) {
+    } catch (IOException | RuntimeException e) {
       throw upstreamError();
     }
   }
