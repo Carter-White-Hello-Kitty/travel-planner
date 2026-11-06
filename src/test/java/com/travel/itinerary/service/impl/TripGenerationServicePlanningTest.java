@@ -9,7 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
-class TripServicePlanningTest {
+class TripGenerationServicePlanningTest {
 
     @Test
     void seedsEmptyDayThenInsertsAcrossTheDayBoundaryWithoutReorderingRequiredPois() {
@@ -20,21 +20,21 @@ class TripServicePlanningTest {
         PoiVO nearDay3 = poi("D", 0, 0.04, 4.5, 1000);
         PoiVO farDay3 = poi("F", 0, 1, 5, 5000);
 
-        List<List<PoiVO>> plan = TripServiceImpl.plan(
+        List<List<PoiVO>> plan = TripGenerationServiceImpl.plan(
                 List.of(List.of(a, b), List.of(c), List.of()),
                 List.of(farDay3, nearDay3, x), 3, List.of());
 
         assertEquals(List.of("A", "B", "X"), ids(plan.get(0)));
         assertEquals(List.of("C"), ids(plan.get(1)));
         assertEquals(List.of("D"), ids(plan.get(2)));
-        assertEquals(TripServiceImpl.totalDistanceKm(List.of(List.of(a, b), List.of(c))),
-                TripServiceImpl.totalDistanceKm(List.of(List.of(a, b, c))), 0.000001);
+        assertEquals(TripGenerationServiceImpl.totalDistanceKm(List.of(List.of(a, b), List.of(c))),
+                TripGenerationServiceImpl.totalDistanceKm(List.of(List.of(a, b, c))), 0.000001);
     }
 
     @Test
     void rejectsAnUnseedableDayRatherThanSavingAnIncompleteTrip() {
         ApiError error = assertThrows(ApiError.class, () ->
-                TripServiceImpl.plan(List.of(List.of(), List.of()), List.of(), 2, List.of()));
+                TripGenerationServiceImpl.plan(List.of(List.of(), List.of()), List.of(), 2, List.of()));
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, error.status);
         assertEquals("INSUFFICIENT_POIS", error.code);
     }
@@ -43,7 +43,7 @@ class TripServicePlanningTest {
     void doesNotFillADayWithAnUnacceptablyDistantOptionalPoi() {
         PoiVO a = poi("A", 0, 0, 4.5, 1000);
         PoiVO far = poi("F", 0, 1, 5, 5000);
-        List<List<PoiVO>> plan = TripServiceImpl.plan(List.of(List.of(a)), List.of(far), 3, List.of());
+        List<List<PoiVO>> plan = TripGenerationServiceImpl.plan(List.of(List.of(a)), List.of(far), 3, List.of());
         assertEquals(List.of("A"), ids(plan.get(0)));
     }
 
