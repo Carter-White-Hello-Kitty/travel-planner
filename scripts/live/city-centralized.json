@@ -1,7 +1,7 @@
 {
   "message": "success",
   "data": {
-    "tripId": 36,
+    "tripId": 40,
     "name": "Manhattan city smoke trip",
     "startDate": "2026-12-07",
     "status": "Planning",
@@ -11,7 +11,7 @@
         "dayNumber": 1,
         "tripPois": [
           {
-            "tripPoiId": 252,
+            "tripPoiId": 288,
             "googlePlaceId": "ChIJ4zGFAZpYwokRGUGph3Mf37k",
             "name": "Central Park",
             "address": "New York, NY, USA",
@@ -20,7 +20,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 253,
+            "tripPoiId": 289,
             "googlePlaceId": "ChIJ5yWju_5YwokR6dgLgzNaIBw",
             "name": "The Channel Gardens",
             "address": "New York, NY 10020, USA",
@@ -29,7 +29,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 254,
+            "tripPoiId": 290,
             "googlePlaceId": "ChIJd7I1IO5ZwokRbv7YUlgChl4",
             "name": "SUMMIT One Vanderbilt",
             "address": "45 E 42nd St, New York, NY 10017, USA",
@@ -43,7 +43,7 @@
         "dayNumber": 2,
         "tripPois": [
           {
-            "tripPoiId": 255,
+            "tripPoiId": 291,
             "googlePlaceId": "ChIJe7vKMf9YwokRIMYfDz7iF9o",
             "name": "Top of The Rock",
             "address": "30 Rockefeller Plaza, New York, NY 10112, USA",
@@ -52,7 +52,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 256,
+            "tripPoiId": 292,
             "googlePlaceId": "ChIJl61Ywf5YwokRWtmFUFfO_ms",
             "name": "The Tour at NBC Studios",
             "address": "30 Rockefeller Plaza, New York, NY 10112, USA",
@@ -61,7 +61,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 257,
+            "tripPoiId": 293,
             "googlePlaceId": "ChIJk-utwVVYwokRx--LhLcP2cA",
             "name": "Father Duffy Square",
             "address": "7th Ave &, W 47th St, New York, NY 10036, USA",
@@ -75,7 +75,7 @@
         "dayNumber": 3,
         "tripPois": [
           {
-            "tripPoiId": 258,
+            "tripPoiId": 294,
             "googlePlaceId": "ChIJmQJIxlVYwokRLgeuocVOGVU",
             "name": "Times Square",
             "address": "Manhattan, NY 10036, USA",
@@ -84,7 +84,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 259,
+            "tripPoiId": 295,
             "googlePlaceId": "ChIJc5zurnxZwokR8vn4ERqrSfc",
             "name": "RiseNY",
             "address": "160 W 45th St, New York, NY 10036, USA",
@@ -93,7 +93,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 260,
+            "tripPoiId": 296,
             "googlePlaceId": "ChIJ8VOfr1RYwokRhil9_pcMKuc",
             "name": "Madame Tussauds New York",
             "address": "234 W 42nd St, New York, NY 10036, USA",
