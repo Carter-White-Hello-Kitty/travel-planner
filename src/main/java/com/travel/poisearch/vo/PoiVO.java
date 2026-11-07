@@ -3,7 +3,6 @@ package com.travel.poisearch.vo;
 import java.util.List;
 
 public record PoiVO(
-        Long id,
         String googlePlaceId,
         String name,
         String address,

@@ -39,6 +39,14 @@ class GooglePlacesClientTest {
         exchange.close();
       }
     });
+    server.createContext("/places/", exchange -> {
+      fieldMask = exchange.getRequestHeaders().getFirst("X-Goog-FieldMask");
+      key = exchange.getRequestHeaders().getFirst("X-Goog-Api-Key");
+      byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(status, bytes.length);
+      exchange.getResponseBody().write(bytes);
+      exchange.close();
+    });
     server.start();
     client = client("fake-test-key", Duration.ofSeconds(2));
   }
@@ -69,7 +77,6 @@ class GooglePlacesClientTest {
         + "places.primaryType,places.types,places.rating,places.userRatingCount,"
         + "places.businessStatus", fieldMask);
     assertEquals("fake-test-key", key);
-    assertNull(places.get(0).id());
     assertEquals("google-id", places.get(0).googlePlaceId());
     assertEquals("Museum", places.get(0).name());
     assertEquals("Baltimore", places.get(0).address());
@@ -131,5 +138,23 @@ class GooglePlacesClientTest {
         () -> client("fake-test-key", Duration.ofMillis(100)).search(request)).status.value());
     server.stop(0);
     assertEquals(502, assertThrows(ApiError.class, () -> client.search(request)).status.value());
+  }
+
+  @Test
+  void loadsRequiredPlaceDetailsById() {
+    body = """
+        {"id":"google-id","displayName":{"text":"Museum"},"formattedAddress":"Baltimore",
+         "location":{"latitude":39.33,"longitude":-76.62},"primaryType":"museum",
+         "types":["museum"],"rating":4.7,"userRatingCount":1200,"businessStatus":"OPERATIONAL"}
+        """;
+    var place = client.details("google-id");
+    assertEquals("google-id", place.googlePlaceId());
+    assertEquals("Museum", place.name());
+    assertEquals("id,displayName,formattedAddress,location,primaryType,types,rating,"
+        + "userRatingCount,businessStatus", fieldMask);
+    assertEquals("fake-test-key", key);
+    status = 404;
+    assertEquals("INVALID_REQUEST", assertThrows(ApiError.class,
+        () -> client.details("missing-id")).code);
   }
 }

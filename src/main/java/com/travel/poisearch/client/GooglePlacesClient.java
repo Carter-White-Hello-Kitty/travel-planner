@@ -5,6 +5,8 @@ import com.travel.poisearch.vo.PoiSearchRequest;
 import com.travel.poisearch.vo.PoiVO;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -23,6 +25,8 @@ public class GooglePlacesClient {
   static final String FIELD_MASK = "places.id,places.displayName,places.formattedAddress,"
       + "places.location,places.primaryType,places.types,places.rating,"
       + "places.userRatingCount,places.businessStatus";
+  static final String DETAILS_FIELD_MASK = "id,displayName,formattedAddress,location,"
+      + "primaryType,types,rating,userRatingCount,businessStatus";
   private final HttpClient http;
   private final URI endpoint;
   private final String apiKey;
@@ -79,6 +83,40 @@ public class GooglePlacesClient {
     }
   }
 
+  /** Loads a user-selected place so itinerary generation never trusts client-supplied coordinates. */
+  public PoiVO details(String placeId) {
+    if (placeId == null || placeId.isBlank() || placeId.length() > 225)
+      throw ApiError.invalid("googlePlaceId", "Required Google Place ID, at most 225 characters");
+    if (apiKey == null || apiKey.isBlank())
+      throw new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "POI_SEARCH_NOT_CONFIGURED",
+          "POI search is not configured");
+    try {
+      URI uri = endpoint.resolve("places/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8));
+      HttpRequest call = HttpRequest.newBuilder(uri).timeout(timeout)
+          .header("X-Goog-Api-Key", apiKey)
+          .header("X-Goog-FieldMask", DETAILS_FIELD_MASK)
+          .GET().build();
+      HttpResponse<String> response = http.send(call, HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() == 404)
+        throw ApiError.invalid("googlePlaceId", "Google Place ID not found");
+      if (response.statusCode() < 200 || response.statusCode() >= 300) throw upstreamError();
+      JsonNode place = json.readTree(response.body());
+      if (place == null || !place.isObject() || place.has("error")) throw upstreamError();
+      PoiVO result = decodePlace(place);
+      if (!placeId.equals(result.googlePlaceId())) throw upstreamError();
+      return result;
+    } catch (HttpTimeoutException e) {
+      throw new ApiError(HttpStatus.GATEWAY_TIMEOUT, "POI_SEARCH_TIMEOUT", "POI search timed out");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw upstreamError();
+    } catch (ApiError e) {
+      throw e;
+    } catch (IOException | RuntimeException e) {
+      throw upstreamError();
+    }
+  }
+
   private List<PoiVO> decode(String body) {
     JsonNode root = json.readTree(body);
     if (root == null || !root.isObject() || root.has("error")) throw upstreamError();
@@ -88,19 +126,23 @@ public class GooglePlacesClient {
     if (!places.isArray()) throw upstreamError();
     List<PoiVO> result = new ArrayList<>();
     for (JsonNode place : places) {
-      String id = text(place, "id");
-      JsonNode location = place.path("location");
-      Double lat = number(location, "latitude"), lon = number(location, "longitude");
-      if (id == null || lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180)
-        throw upstreamError();
-      String primaryType = text(place, "primaryType");
-      List<String> types = types(place);
-      String category = primaryType != null ? primaryType : types.isEmpty() ? null : types.get(0);
-      result.add(new PoiVO(null, id, text(place.path("displayName"), "text"),
-          text(place, "formattedAddress"), lat, lon, category, number(place, "rating"),
-          primaryType, types, count(place, "userRatingCount"), text(place, "businessStatus")));
+      result.add(decodePlace(place));
     }
     return List.copyOf(result);
+  }
+
+  private PoiVO decodePlace(JsonNode place) {
+    String id = text(place, "id");
+    JsonNode location = place.path("location");
+    Double lat = number(location, "latitude"), lon = number(location, "longitude");
+    if (id == null || lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180)
+      throw upstreamError();
+    String primaryType = text(place, "primaryType");
+    List<String> types = types(place);
+    String category = primaryType != null ? primaryType : types.isEmpty() ? null : types.get(0);
+    return new PoiVO(id, text(place.path("displayName"), "text"),
+        text(place, "formattedAddress"), lat, lon, category, number(place, "rating"),
+        primaryType, types, count(place, "userRatingCount"), text(place, "businessStatus"));
   }
 
   private static String text(JsonNode node, String field) {

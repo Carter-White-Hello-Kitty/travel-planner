@@ -1,7 +1,7 @@
 package com.travel.itinerary.entity;
 
 /**
- * Progress rules for {@link TripPoi#getStatus()}, which stores {@link #value()} ("Planned", ...).
+ * Progress rules for {@link TripPoi#getStatus()}; the converter stores {@link #value()} in SQL.
  *
  * <pre>
  * Planned ──location detected──▶ Passed ──check-in──▶ Visited

@@ -18,5 +18,13 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     ports: ["127.0.0.1:18025:8025", "127.0.0.1:11025:1025"]
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:${REDIS_PORT:-56379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
 volumes:
   mysql-data:

@@ -7,6 +7,7 @@
 - Java 17
 - Spring Boot 4.1.2
 - Spring Data JPA（Hibernate）
+- Spring Data Redis
 - Spring Security（JWT 无状态认证）
 - MySQL 8
 - Maven（仓库自带 Maven Wrapper，无需单独安装）
@@ -15,7 +16,7 @@
 ## 前置要求
 
 - JDK 17+
-- Docker Desktop（提供开发和测试共用的 MySQL，以及 Mailpit）
+- Docker Desktop（提供本地 MySQL、Redis 和 Mailpit）
 
 ## 环境配置（Profile）
 
@@ -47,6 +48,7 @@ DB_HOST=localhost
 DB_PORT=53306
 DB_USERNAME=travel
 DB_PASSWORD=local-only-change-me
+REDIS_PORT=56379
 ```
 
 `DB_PORT` 和 `DB_PASSWORD` 同时供 Compose、开发服务和集成测试使用。示例密码仅用于本机；如需修改，请在首次启动 Docker 前修改 `.env`。已有数据卷不会因为修改密码或初始化脚本而重新初始化。
@@ -58,7 +60,7 @@ docker compose up -d --wait
 ./mvnw spring-boot:run
 ```
 
-Compose 启动一个 MySQL 容器和一个 Mailpit 容器；MySQL 容器内有开发库 `travel_planner` 和测试库 `travel_planner_test`。默认使用 `dev` profile 的 Java 服务连接开发库，监听 `http://localhost:8085`。Java 服务启动时会执行共享的 `schema.sql` 建表（`CREATE TABLE IF NOT EXISTS`，幂等）。Compose 不启动 Java 服务。
+Compose 启动 MySQL、Redis 和 Mailpit；MySQL 容器内有开发库 `travel_planner` 和测试库 `travel_planner_test`。默认使用 `dev` profile 的 Java 服务连接开发库及 Redis 的数据库 0，监听 `http://localhost:8085`。Java 服务启动时会执行共享的 `schema.sql` 建表（`CREATE TABLE IF NOT EXISTS`，幂等）。Compose 不启动 Java 服务。
 
 ---
 
@@ -70,14 +72,15 @@ Compose 启动一个 MySQL 容器和一个 Mailpit 容器；MySQL 容器内有�
 docker compose up -d --wait
 ```
 
-会启动两个容器：
+会启动三个容器：
 
 - **MySQL 8.4**：`localhost:53306`，用户 `travel` / 默认密码 `local-only-change-me`；包含开发库 `travel_planner` 和独立测试库 `travel_planner_test`
 - **Mailpit**（假邮箱）：SMTP `localhost:11025`，网页收件箱 `http://localhost:18025`
+- **Redis**：`localhost:56379`；开发使用数据库 0，自动化测试使用数据库 1
 
 开发库由 MySQL 镜像的 `MYSQL_DATABASE` 创建；测试库由 `scripts/init-test-db.sql` 创建。这两个动作只在空 MySQL 数据卷首次初始化时发生。业务表由 Java 服务启动时执行 `schema.sql` 创建。
 
-若本机 `53306` 端口已被占用，可在 `.env` 中修改 `DB_PORT`，再启动 Compose、Java 服务和 Maven 测试；三者会使用同一端口。Mailpit 的 `11025`、`18025` 端口也必须空闲；只运行集成测试时，可以只启动 `mysql` 服务。
+若本机 `53306` 或 `56379` 端口已被占用，可在 `.env` 中修改 `DB_PORT` 或 `REDIS_PORT`，再启动 Compose、Java 服务和 Maven 测试。Mailpit 的 `11025`、`18025` 端口也必须空闲；只运行集成测试时，至少启动 `mysql` 和 `redis` 服务。
 
 ### 2. 冒烟测试
 
@@ -95,7 +98,7 @@ SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
 
 ### 3. 集成测试
 
-MySQL 容器启动后直接运行，不需要先启动 Java 服务：
+MySQL 和 Redis 容器启动后直接运行，不需要先启动 Java 服务：
 
 ```bash
 ./mvnw clean verify

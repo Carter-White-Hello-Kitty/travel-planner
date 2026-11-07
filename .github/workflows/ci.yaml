@@ -34,7 +34,7 @@ jobs:
       - name: Install smoke test dependencies
         run: python -m pip install -r requirements-smoke.txt
 
-      - name: Start MySQL and Mailpit
+      - name: Start MySQL, Redis and Mailpit
         run: docker compose up -d --wait
 
       - name: Package application

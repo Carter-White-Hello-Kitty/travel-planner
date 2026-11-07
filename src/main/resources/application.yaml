@@ -13,6 +13,11 @@ spring:
     username: ${DB_USERNAME:travel}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:56379}
+      database: ${REDIS_DATABASE:0}
   sql:
     init:
       mode: always
@@ -36,6 +41,14 @@ google:
     api-key: ${GOOGLE_PLACES_API_KEY:}
     connect-timeout: 2s
     request-timeout: 5s
+
+itinerary:
+  generation:
+    max-duration: 10m
+    processing-ttl: 15m
+    completed-ttl: 24h
+    rate-limit: 5
+    rate-window-seconds: 60
 
 auth:
   origins: ${AUTH_ORIGINS:http://localhost:3000}
