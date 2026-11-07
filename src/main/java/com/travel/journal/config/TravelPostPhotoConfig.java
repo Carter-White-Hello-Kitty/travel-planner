@@ -15,7 +15,8 @@ public class TravelPostPhotoConfig {
             @Value("${AWS_REGION:}") String region,
             @Value("${AWS_S3_TRAVEL_JOURNAL_PHOTO_ACCESS_KEY_ID:}") String accessKeyId,
             @Value("${AWS_S3_TRAVEL_JOURNAL_PHOTO_ACCESS_SECRET:}") String secretAccessKey) {
-        var builder = S3Client.builder().region(Region.of(region));
+        // The S3 client is created in every application context, including CI where photo uploads are not configured.
+        var builder = S3Client.builder().region(region.isBlank() ? Region.US_EAST_1 : Region.of(region));
         if (accessKeyId.isBlank() != secretAccessKey.isBlank()) {
             throw new IllegalStateException("Both S3 photo access key settings must be provided together");
         }
