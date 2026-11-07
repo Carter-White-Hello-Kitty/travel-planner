@@ -1,7 +1,7 @@
 {
   "message": "success",
   "data": {
-    "tripId": 25,
+    "tripId": 33,
     "name": "Manhattan required POI smoke trip",
     "startDate": "2026-12-07",
     "status": "Planning",
@@ -11,7 +11,7 @@
         "dayNumber": 1,
         "tripPois": [
           {
-            "tripPoiId": 193,
+            "tripPoiId": 225,
             "googlePlaceId": "ChIJ9U1mz_5YwokRosza1aAk0jM",
             "name": "Rockefeller Center",
             "address": "45 Rockefeller Plaza, New York, NY 10111, USA",
@@ -20,7 +20,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 194,
+            "tripPoiId": 226,
             "googlePlaceId": "ChIJc5zurnxZwokR8vn4ERqrSfc",
             "name": "RiseNY",
             "address": "160 W 45th St, New York, NY 10036, USA",
@@ -29,7 +29,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 195,
+            "tripPoiId": 227,
             "googlePlaceId": "ChIJmQJIxlVYwokRLgeuocVOGVU",
             "name": "Times Square",
             "address": "Manhattan, NY 10036, USA",
@@ -43,7 +43,7 @@
         "dayNumber": 2,
         "tripPois": [
           {
-            "tripPoiId": 196,
+            "tripPoiId": 228,
             "googlePlaceId": "ChIJk-utwVVYwokRx--LhLcP2cA",
             "name": "Father Duffy Square",
             "address": "7th Ave &, W 47th St, New York, NY 10036, USA",
@@ -52,7 +52,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 197,
+            "tripPoiId": 229,
             "googlePlaceId": "ChIJOxpTCKBZwokR-J2obfbnzbY",
             "name": "Central Park Attractions",
             "address": "1794 Broadway, New York, NY 10019, USA",
@@ -61,7 +61,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 198,
+            "tripPoiId": 230,
             "googlePlaceId": "ChIJl61Ywf5YwokRWtmFUFfO_ms",
             "name": "The Tour at NBC Studios",
             "address": "30 Rockefeller Plaza, New York, NY 10112, USA",
@@ -75,7 +75,7 @@
         "dayNumber": 3,
         "tripPois": [
           {
-            "tripPoiId": 199,
+            "tripPoiId": 231,
             "googlePlaceId": "ChIJe7vKMf9YwokRIMYfDz7iF9o",
             "name": "Top of The Rock",
             "address": "30 Rockefeller Plaza, New York, NY 10112, USA",
@@ -84,7 +84,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 200,
+            "tripPoiId": 232,
             "googlePlaceId": "ChIJ5yWju_5YwokR6dgLgzNaIBw",
             "name": "The Channel Gardens",
             "address": "New York, NY 10020, USA",
@@ -93,7 +93,7 @@
             "status": "Planned"
           },
           {
-            "tripPoiId": 201,
+            "tripPoiId": 233,
             "googlePlaceId": "ChIJd7I1IO5ZwokRbv7YUlgChl4",
             "name": "SUMMIT One Vanderbilt",
             "address": "45 E 42nd St, New York, NY 10017, USA",

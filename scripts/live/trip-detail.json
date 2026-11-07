@@ -1,7 +1,7 @@
 {
   "message": "success",
   "data": {
-    "tripId": 26,
+    "tripId": 32,
     "name": "Manhattan detail smoke trip",
     "startDate": "2026-12-07",
     "status": "Planning",
@@ -11,7 +11,7 @@
         "dayNumber": 1,
         "tripPois": [
           {
-            "tripPoiId": 202,
+            "tripPoiId": 224,
             "googlePlaceId": "ChIJ4zGFAZpYwokRGUGph3Mf37k",
             "name": "Central Park",
             "address": "New York, NY, USA",
