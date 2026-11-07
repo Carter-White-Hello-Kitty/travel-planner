@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.travel.auth.repository.UserRepository;
+import com.travel.auth.config.Secrets;
 import com.travel.auth.service.TokenService;
 import com.travel.itinerary.entity.Trip;
 import com.travel.itinerary.entity.TripDay;
@@ -46,6 +47,7 @@ import static org.mockito.Mockito.when;
 class TripLifecycleIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate db;
+    @Autowired Secrets secrets;
     @Autowired UserRepository userRepository;
     @Autowired TripRepository tripRepository;
     @Autowired TripService tripService;
@@ -65,16 +67,31 @@ class TripLifecycleIntegrationTest {
         ownerToken = registerAndLogin(OWNER);
     }
 
-    /** Removes everything this test creates so other modules' tests start from empty tables. */
+    /** Removes only the two accounts and trips owned by this test class. */
     @AfterEach
     void clean() {
         String name = db.queryForObject("SELECT DATABASE()", String.class);
         if (!"travel_planner_test".equals(name))
             throw new IllegalStateException("Refusing to clean a non-test database");
-        for (String table : List.of(
-                "trip_pois", "trip_days", "trips",
-                "auth_rate_limits", "auth_refresh_tokens", "auth_sessions", "users"))
-            db.update("DELETE FROM " + table);
+        for (Long userId : db.queryForList(
+                "SELECT id FROM users WHERE email IN (?, ?)", Long.class, OWNER, OTHER)) {
+            db.update("DELETE tp FROM trip_pois tp JOIN trip_days d ON d.id = tp.trip_day_id "
+                    + "JOIN trips t ON t.id = d.trip_id WHERE t.user_id = ?", userId);
+            db.update("DELETE d FROM trip_days d JOIN trips t ON t.id = d.trip_id WHERE t.user_id = ?", userId);
+            db.update("DELETE FROM trip_generation_requests WHERE user_id = ?", userId);
+            db.update("DELETE FROM travel_posts WHERE trip_id IN "
+                    + "(SELECT id FROM trips WHERE user_id = ?)", userId);
+            db.update("DELETE FROM trips WHERE user_id = ?", userId);
+            db.update("DELETE FROM wishlist WHERE user_id = ?", userId);
+            db.update("DELETE FROM pwd_reset_tokens WHERE user_id = ?", userId);
+            db.update("DELETE FROM auth_refresh_tokens WHERE session_id IN "
+                    + "(SELECT id FROM auth_sessions WHERE user_id = ?)", userId);
+            db.update("DELETE FROM auth_sessions WHERE user_id = ?", userId);
+            db.update("DELETE FROM users WHERE id = ?", userId);
+        }
+        for (String key : List.of("register:127.0.0.1", "login-ip:127.0.0.1")) {
+            db.update("DELETE FROM auth_rate_limits WHERE bucket_key LIKE ?", secrets.rateHash(key) + ":%");
+        }
     }
 
     @Test
@@ -318,7 +335,8 @@ class TripLifecycleIntegrationTest {
                         """)).andReturn().getResponse();
 
         assertError(response, 400, "INVALID_REQUEST");
-        assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips", Long.class));
+        Long ownerId = userRepository.findByEmail(OWNER).orElseThrow().getId();
+        assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips WHERE user_id = ?", Long.class, ownerId));
     }
 
     // ---- helpers ----
