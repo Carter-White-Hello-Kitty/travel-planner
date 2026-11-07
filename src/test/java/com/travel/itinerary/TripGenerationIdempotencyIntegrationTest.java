@@ -3,10 +3,12 @@ package com.travel.itinerary;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -341,21 +344,83 @@ class TripGenerationIdempotencyIntegrationTest {
     }
 
     @Test
-    void generationFailureBeforeCommitLeavesNoTripOrIdempotencyRecord() {
+    void generationFailureBeforeCommitReleasesClaimAndAllowsSameKeyRetry() {
         when(search.search(any())).thenThrow(new IllegalStateException("synthetic Google failure"));
         String requestId = requestId();
+        GenerateTripRequest body = request("Failing trip");
 
         assertThrows(RuntimeException.class,
-                () -> service.generate(identity(), requestId, request("Failing trip")));
+                () -> service.generate(identity(), requestId, body));
 
         assertEquals(0L, tripCount());
         assertEquals(0L, requestCount());
-        String state = redis.opsForValue().get(key(requestId));
-        assertNotNull(state);
-        assertTrue(state.contains("PROCESSING"));
-        Long ttlSeconds = redis.getExpire(key(requestId));
-        assertNotNull(ttlSeconds);
-        assertTrue(ttlSeconds > 0);
+        assertEquals(Boolean.FALSE, redis.hasKey(key(requestId)));
+
+        reset(search);
+        when(search.search(any())).thenReturn(List.of(place()));
+        TripService.GenerationOutcome retry = service.generate(identity(), requestId, body);
+        assertFalse(retry.processing());
+        assertEquals(1L, tripCount());
+        assertEquals(1L, requestCount());
+    }
+
+    @Test
+    void failedOldClaimCannotDeleteNewProcessingClaim() throws Exception {
+        PoiVO place = place();
+        AtomicInteger searches = new AtomicInteger();
+        CountDownLatch firstSearching = new CountDownLatch(1);
+        CountDownLatch secondSearching = new CountDownLatch(1);
+        CountDownLatch failFirst = new CountDownLatch(1);
+        CountDownLatch finishSecond = new CountDownLatch(1);
+        when(search.search(any())).thenAnswer(invocation -> {
+            int call = searches.incrementAndGet();
+            if (call == 1) {
+                firstSearching.countDown();
+                if (!failFirst.await(10, TimeUnit.SECONDS))
+                    throw new IllegalStateException("First mocked search timed out");
+                throw new IllegalStateException("First mocked search failed");
+            }
+            if (call == 2) {
+                secondSearching.countDown();
+                if (!finishSecond.await(10, TimeUnit.SECONDS))
+                    throw new IllegalStateException("Second mocked search timed out");
+                return List.of(place);
+            }
+            throw new IllegalStateException("Unexpected extra Google search");
+        });
+        String requestId = requestId();
+        GenerateTripRequest body = request("City trip");
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<TripService.GenerationOutcome> first = workers.submit(
+                    () -> service.generate(identity(), requestId, body));
+            assertTrue(firstSearching.await(10, TimeUnit.SECONDS));
+            String oldClaim = redis.opsForValue().get(key(requestId));
+            assertNotNull(oldClaim);
+            // Simulate expiry of A's claim before B acquires the same key.
+            redis.delete(key(requestId));
+            Future<TripService.GenerationOutcome> second = workers.submit(
+                    () -> service.generate(identity(), requestId, body));
+            assertTrue(secondSearching.await(10, TimeUnit.SECONDS));
+            String newClaim = redis.opsForValue().get(key(requestId));
+            assertNotNull(newClaim);
+            assertNotEquals(oldClaim, newClaim);
+
+            failFirst.countDown();
+            assertThrows(ExecutionException.class, () -> first.get(10, TimeUnit.SECONDS));
+            assertEquals(newClaim, redis.opsForValue().get(key(requestId)));
+            assertTrue(service.generate(identity(), requestId, body).processing());
+            assertEquals(2, searches.get());
+
+            finishSecond.countDown();
+            assertNotNull(second.get(10, TimeUnit.SECONDS).trip());
+            assertEquals(1L, tripCount());
+        } finally {
+            failFirst.countDown();
+            finishSecond.countDown();
+            workers.shutdown();
+            if (!workers.awaitTermination(10, TimeUnit.SECONDS)) workers.shutdownNow();
+        }
     }
 
     @Test

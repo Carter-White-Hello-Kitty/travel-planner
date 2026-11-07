@@ -39,8 +39,10 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -54,6 +56,13 @@ import tools.jackson.databind.json.JsonMapper;
 public class TripServiceImpl implements TripService {
     private static final String PROCESSING = "PROCESSING";
     private static final String COMPLETED = "COMPLETED";
+    private static final DefaultRedisScript<Long> RELEASE_OWN_PROCESSING;
+
+    static {
+        RELEASE_OWN_PROCESSING = new DefaultRedisScript<>();
+        RELEASE_OWN_PROCESSING.setLocation(new ClassPathResource("redis/release-trip-generation.lua"));
+        RELEASE_OWN_PROCESSING.setResultType(Long.class);
+    }
 
     private final TripRepository tripRepository;
     private final TripDayRepository tripDayRepository;
@@ -127,8 +136,10 @@ public class TripServiceImpl implements TripService {
 
         // RateLimiter uses its own short MySQL transaction; never call it inside the trip save transaction.
         rateLimiter.hit("trip-generate:" + identity.userId(), rateLimit, rateWindowSeconds);
-        RedisState claim = new RedisState(PROCESSING, hash, null);
-        boolean claimed = redisClaim(key, claim);
+        // Each claim has its own identifier; requestId and requestHash are shared by retries.
+        String claimValue = json.writeValueAsString(
+                new RedisState(PROCESSING, hash, UUID.randomUUID().toString(), null));
+        boolean claimed = redisClaim(key, claimValue);
         if (!claimed) {
             GenerationOutcome concurrent = readCached(key, hash);
             if (concurrent != null) {
@@ -144,18 +155,29 @@ public class TripServiceImpl implements TripService {
                     "Generation state changed; retry with the same Idempotency-Key");
         }
 
-        List<List<PoiVO>> plan = generationService.generatePlan(request, maxGenerationDuration);
+        GeneratedTrip saved;
         try {
-            GeneratedTrip saved = transactions.execute(status ->
+            List<List<PoiVO>> plan = generationService.generatePlan(request, maxGenerationDuration);
+            saved = transactions.execute(status ->
                     savePlan(identity.userId(), canonicalId, hash, request, plan));
-            cacheCompleted(key, hash, saved);
-            return new GenerationOutcome(saved, false);
         } catch (DataIntegrityViolationException duplicateOrDatabaseError) {
             // The failed transaction has rolled back. Look for the competing committed request now.
-            GenerationOutcome winner = restoreCommitted(identity.userId(), canonicalId, hash, key);
-            if (winner != null) return winner;
+            try {
+                GenerationOutcome winner = restoreCommitted(identity.userId(), canonicalId, hash, key);
+                if (winner != null) return winner;
+            } catch (RuntimeException recoveryFailure) {
+                releaseOwnProcessing(key, claimValue, recoveryFailure);
+                throw recoveryFailure;
+            }
+            releaseOwnProcessing(key, claimValue, duplicateOrDatabaseError);
             throw duplicateOrDatabaseError;
+        } catch (RuntimeException generationFailure) {
+            releaseOwnProcessing(key, claimValue, generationFailure);
+            throw generationFailure;
         }
+        // MySQL has committed. A failed cache write must leave the committed trip recoverable.
+        cacheCompleted(key, hash, saved);
+        return new GenerationOutcome(saved, false);
     }
 
     private GeneratedTrip savePlan(Long userId, String requestId, String requestHash,
@@ -265,10 +287,9 @@ public class TripServiceImpl implements TripService {
         throw redisUnavailable();
     }
 
-    private boolean redisClaim(String key, RedisState state) {
+    private boolean redisClaim(String key, String claimValue) {
         try {
-            Boolean claimed = redis.opsForValue().setIfAbsent(key,
-                    json.writeValueAsString(state), processingTtl);
+            Boolean claimed = redis.opsForValue().setIfAbsent(key, claimValue, processingTtl);
             if (claimed == null) throw redisUnavailable();
             return claimed;
         } catch (org.springframework.dao.DataAccessException e) {
@@ -276,8 +297,17 @@ public class TripServiceImpl implements TripService {
         }
     }
 
+    private void releaseOwnProcessing(String key, String claimValue, RuntimeException failure) {
+        try {
+            // GET and DEL run atomically; an expired claim cannot delete a newer claim or COMPLETED result.
+            redis.execute(RELEASE_OWN_PROCESSING, List.of(key), claimValue);
+        } catch (RuntimeException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+    }
+
     private void cacheCompleted(String key, String requestHash, GeneratedTrip trip) {
-        RedisState state = new RedisState(COMPLETED, requestHash, Result.success(trip));
+        RedisState state = new RedisState(COMPLETED, requestHash, null, Result.success(trip));
         try {
             redis.opsForValue().set(key, json.writeValueAsString(state), completedTtl);
         } catch (org.springframework.dao.DataAccessException e) {
@@ -347,6 +377,7 @@ public class TripServiceImpl implements TripService {
             GenerateTripRequest.SearchArea searchArea, Integer maxPoisPerDay,
             List<String> preferredTypes, List<CanonicalDay> tripDays) {}
     private record RedisState(String status, String requestHash,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String claimId,
             @JsonInclude(JsonInclude.Include.NON_NULL) Result<GeneratedTrip> response) {}
     private record SavedPoi(Long id, String googlePlaceId, String status) {}
     private record SavedDay(Integer dayNumber, List<SavedPoi> pois) {}
