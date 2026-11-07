@@ -1,4 +1,4 @@
-package com.travel.journal.service.impl;
+package com.travel.journal.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
