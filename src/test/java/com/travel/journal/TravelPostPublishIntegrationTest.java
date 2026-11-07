@@ -51,7 +51,7 @@ class TravelPostPublishIntegrationTest {
         Trip trip = new Trip();
         trip.setUser(user);
         trip.setName("Seattle weekend");
-        trip.setStatus(status.value());
+        trip.setStatus(status);
         trip.setDayCount(2);
         return trips.saveAndFlush(trip);
     }

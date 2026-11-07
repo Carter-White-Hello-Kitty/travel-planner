@@ -37,7 +37,7 @@ class TravelPostPublishServiceTest {
         events = mock(ApplicationEventPublisher.class);
         service = new TravelPostPublishServiceImpl(em, repository, JsonMapper.builder().build(), events);
         User owner = new User(); owner.setId(7L);
-        trip = new Trip(); trip.setId(12L); trip.setUser(owner); trip.setStatus(TripStatus.COMPLETED.value());
+        trip = new Trip(); trip.setId(12L); trip.setUser(owner); trip.setStatus(TripStatus.COMPLETED);
         when(em.find(Trip.class, 12L, LockModeType.PESSIMISTIC_WRITE)).thenReturn(trip);
         when(repository.save(any(TravelPost.class))).thenAnswer(call -> {
             TravelPost post = call.getArgument(0); post.setId(50L); return post;
@@ -46,7 +46,7 @@ class TravelPostPublishServiceTest {
 
     @ParameterizedTest @EnumSource(value = TripStatus.class, names = {"COMPLETED", "CANCELLED"})
     void savesFinishedTripAndNotifiesSearch(TripStatus status) {
-        trip.setStatus(status.value());
+        trip.setStatus(status);
         assertThat(service.publish(7L, new CreateTravelPostRequest(12L, "海边", List.of("https://example.com/a.jpg")))).isEqualTo(50L);
         var saved = ArgumentCaptor.forClass(TravelPost.class);
         verify(repository).save(saved.capture());
@@ -60,7 +60,7 @@ class TravelPostPublishServiceTest {
 
     @ParameterizedTest @EnumSource(value = TripStatus.class, names = {"PLANNING", "ONGOING"})
     void rejectsUnfinishedTrip(TripStatus status) {
-        trip.setStatus(status.value());
+        trip.setStatus(status);
         failure(7L, new CreateTravelPostRequest(12L, null, null), 409);
     }
 
