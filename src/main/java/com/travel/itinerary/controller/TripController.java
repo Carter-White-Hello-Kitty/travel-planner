@@ -5,6 +5,7 @@ import com.travel.common.Result;
 import com.travel.itinerary.service.TripService;
 import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
+import com.travel.itinerary.vo.TripCheckInResult;
 import com.travel.itinerary.vo.TripSummary;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -48,6 +49,12 @@ public class TripController {
         return Result.success(tripService.list(identity));
     }
 
+    @GetMapping("/{id}")
+    public Result<GeneratedTrip> detail(
+            @AuthenticationPrincipal TokenService.Identity identity, @PathVariable Long id) {
+        return Result.success(tripService.detail(identity, id));
+    }
+
     @PostMapping("/{id}/start")
     public Result<Void> start(
             @AuthenticationPrincipal TokenService.Identity identity, @PathVariable Long id) {
@@ -60,5 +67,11 @@ public class TripController {
             @AuthenticationPrincipal TokenService.Identity identity, @PathVariable Long id) {
         tripService.cancel(identity, id);
         return Result.success();
+    }
+
+    @PostMapping("/{tripPoiId}/check-in")
+    public Result<TripCheckInResult> checkIn(
+            @AuthenticationPrincipal TokenService.Identity identity, @PathVariable Long tripPoiId) {
+        return Result.success(tripService.checkIn(identity, tripPoiId));
     }
 }
