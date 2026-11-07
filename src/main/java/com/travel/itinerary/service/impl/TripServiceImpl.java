@@ -22,6 +22,7 @@ import com.travel.itinerary.service.TripGenerationService;
 import com.travel.itinerary.service.TripService;
 import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
+import com.travel.itinerary.vo.TripCheckInResult;
 import com.travel.itinerary.vo.TripSummary;
 import com.travel.poisearch.client.GooglePlacesClient;
 import com.travel.poisearch.vo.PoiVO;
@@ -35,8 +36,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -46,6 +49,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
@@ -72,6 +76,7 @@ public class TripServiceImpl implements TripService {
     private final GooglePlacesClient google;
     private final TripGenerationService generationService;
     private final TransactionTemplate transactions;
+    private final TransactionTemplate readTransactions;
     private final StringRedisTemplate redis;
     private final RateLimiter rateLimiter;
     private final Clock clock;
@@ -100,6 +105,8 @@ public class TripServiceImpl implements TripService {
         this.google = google;
         this.generationService = generationService;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.readTransactions = new TransactionTemplate(transactionManager);
+        this.readTransactions.setReadOnly(true);
         this.redis = redis;
         this.rateLimiter = rateLimiter;
         this.clock = clock;
@@ -322,16 +329,19 @@ public class TripServiceImpl implements TripService {
                 .orElse(null);
         if (recorded == null) return null;
         requireSameRequest(recorded.getRequestHash(), requestHash);
-        SavedTrip saved = transactions.execute(status -> loadSavedTrip(userId, recorded.getTripId()));
+        SavedTrip saved = readTransactions.execute(status -> {
+            Trip trip = tripRepository.findByIdAndUserId(recorded.getTripId(), userId)
+                    .orElseThrow(() -> new ApiError(HttpStatus.SERVICE_UNAVAILABLE,
+                            "GENERATION_RECORD_INVALID", "Saved trip is unavailable"));
+            return loadSavedTrip(trip);
+        });
         GeneratedTrip restored = restoreDisplayFields(saved);
         cacheCompleted(redisKey, requestHash, restored);
         return new GenerationOutcome(restored, false);
     }
 
-    private SavedTrip loadSavedTrip(Long userId, Long tripId) {
-        Trip trip = tripRepository.findByIdAndUserId(tripId, userId).orElseThrow(() ->
-                new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "GENERATION_RECORD_INVALID",
-                        "Saved trip is unavailable"));
+    private SavedTrip loadSavedTrip(Trip trip) {
+        Long tripId = trip.getId();
         List<SavedDay> days = new ArrayList<>();
         for (TripDay day : tripDayRepository.findByTripIdOrderByDayNumberAsc(tripId)) {
             List<SavedPoi> pois = tripPoiRepository.findByTripDayIdOrderBySequenceAsc(day.getId())
@@ -345,10 +355,11 @@ public class TripServiceImpl implements TripService {
 
     private GeneratedTrip restoreDisplayFields(SavedTrip saved) {
         List<GeneratedTrip.Day> days = new ArrayList<>();
+        Map<String, PoiVO> displayCache = new HashMap<>();
         for (SavedDay day : saved.days()) {
             List<GeneratedTrip.Poi> pois = new ArrayList<>();
             for (SavedPoi poi : day.pois()) {
-                PoiVO details = google.details(poi.googlePlaceId());
+                PoiVO details = displayCache.computeIfAbsent(poi.googlePlaceId(), google::details);
                 if (details == null || !poi.googlePlaceId().equals(details.googlePlaceId()))
                     throw new ApiError(HttpStatus.BAD_GATEWAY, "POI_SEARCH_UPSTREAM_ERROR",
                             "POI search provider is temporarily unavailable");
@@ -395,6 +406,19 @@ public class TripServiceImpl implements TripService {
     }
 
     @Override
+    public GeneratedTrip detail(TokenService.Identity identity, Long tripId) {
+        if (identity == null || identity.userId() == null)
+            throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
+        SavedTrip saved = readTransactions.execute(status -> {
+            Trip trip = tripRepository.findByIdAndUserId(tripId, identity.userId())
+                    .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
+                            "Trip not found"));
+            return loadSavedTrip(trip);
+        });
+        return restoreDisplayFields(saved);
+    }
+
+    @Override
     @Transactional
     public void start(TokenService.Identity identity, Long tripId) {
         changeStatus(identity, tripId, TripStatus.ONGOING);
@@ -404,6 +428,42 @@ public class TripServiceImpl implements TripService {
     @Transactional
     public void cancel(TokenService.Identity identity, Long tripId) {
         changeStatus(identity, tripId, TripStatus.CANCELLED);
+    }
+
+    @Override
+    // The trip lock serializes writes; READ_COMMITTED lets the final-POI count see the
+    // preceding check-in even if this request read its trip ID before waiting for the lock.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public TripCheckInResult checkIn(TokenService.Identity identity, Long tripPoiId) {
+        if (identity == null || identity.userId() == null)
+            throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
+        Long tripId = tripPoiRepository.findTripIdByTripPoiId(tripPoiId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
+                        "Trip POI not found"));
+        // All lifecycle mutations lock the parent Trip first, so check-in and cancel cannot race.
+        Trip trip = tripRepository.findByIdForUpdate(tripId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
+                        "Trip not found"));
+        Ownership.requireOwner(identity, trip.getUser().getId());
+        TripPoi poi = tripPoiRepository.findById(tripPoiId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
+                        "Trip POI not found"));
+        if (!tripId.equals(poi.getTripDay().getTrip().getId()))
+            throw new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip POI not found");
+
+        if (poi.getStatus() == TripPoiStatus.VISITED)
+            return new TripCheckInResult(tripPoiId, poi.getStatus().value(), trip.getStatus().value());
+        if (trip.getStatus() != TripStatus.ONGOING)
+            throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS",
+                    "Cannot check in a POI unless the trip is Ongoing");
+        if (!poi.getStatus().canTransitionTo(TripPoiStatus.VISITED))
+            throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_POI_STATUS",
+                    "Cannot check in a POI from " + poi.getStatus().value());
+
+        poi.setStatus(TripPoiStatus.VISITED);
+        if (tripPoiRepository.countOtherUnvisited(tripId, tripPoiId, TripPoiStatus.VISITED) == 0)
+            trip.setStatus(TripStatus.COMPLETED);
+        return new TripCheckInResult(tripPoiId, poi.getStatus().value(), trip.getStatus().value());
     }
 
     /** Loads the caller's trip under a row lock and applies a legal status transition. */
