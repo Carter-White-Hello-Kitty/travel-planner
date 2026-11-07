@@ -2,6 +2,8 @@ package com.travel.itinerary.entity;
 
 import com.travel.auth.entity.User;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -16,6 +18,7 @@ import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -35,11 +38,20 @@ public class Trip {
     private String name;
 
     @Column(nullable = false, length = 20)
-    private String status;
+    @Convert(converter = TripStatusConverter.class)
+    private TripStatus status;
 
     @Column(name = "day_count", nullable = false)
     private Integer dayCount;
 
-    @OneToMany(mappedBy = "trip")
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.PERSIST)
     private List<TripDay> tripDays = new ArrayList<>();
+
+    public void addDay(TripDay day) {
+        tripDays.add(day);
+        day.setTrip(this);
+    }
 }

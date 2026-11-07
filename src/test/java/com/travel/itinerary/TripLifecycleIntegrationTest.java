@@ -1,6 +1,7 @@
 package com.travel.itinerary;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -25,7 +26,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/** POST /trips/{id}/start and /cancel over real HTTP, auth and the test database. */
+/** Trip endpoints over the security filter chain and the test database. */
 @SpringBootTest
 @AutoConfigureMockMvc
 class TripLifecycleIntegrationTest {
@@ -119,15 +120,71 @@ class TripLifecycleIntegrationTest {
         assertEquals("Planning", statusOf(id));
     }
 
+    @Test
+    void listsOnlyCurrentUsersTripsInDescendingIdOrder() throws Exception {
+        Long older = trip(OWNER, TripStatus.PLANNING);
+        registerAndLogin(OTHER);
+        trip(OTHER, TripStatus.ONGOING);
+        Long newer = trip(OWNER, TripStatus.COMPLETED);
+
+        MockHttpServletResponse response = mvc.perform(get("/trips")
+                .header("Authorization", "Bearer " + ownerToken)).andReturn().getResponse();
+
+        assertEquals(200, response.getStatus());
+        JsonNode body = json.readTree(response.getContentAsString());
+        assertEquals("success", body.get("message").asText());
+        JsonNode trips = body.get("data");
+        assertEquals(2, trips.size());
+        assertEquals(newer, trips.get(0).get("tripId").asLong());
+        assertEquals("Completed", trips.get(0).get("status").asText());
+        assertEquals("Hello New York", trips.get(0).get("name").asText());
+        assertEquals(1, trips.get(0).get("dayCount").asInt());
+        assertEquals(older, trips.get(1).get("tripId").asLong());
+        assertFalse(trips.get(0).has("tripDays"));
+    }
+
+    @Test
+    void listIsEmptyWhenCurrentUserHasNoTrips() throws Exception {
+        registerAndLogin(OTHER);
+        trip(OTHER, TripStatus.PLANNING);
+
+        MockHttpServletResponse response = mvc.perform(get("/trips")
+                .header("Authorization", "Bearer " + ownerToken)).andReturn().getResponse();
+
+        assertEquals(200, response.getStatus());
+        assertTrue(json.readTree(response.getContentAsString()).get("data").isEmpty());
+    }
+
+    @Test
+    void listRequiresAuthentication() throws Exception {
+        MockHttpServletResponse response = mvc.perform(get("/trips")).andReturn().getResponse();
+        assertError(response, 401, "AUTH_REQUIRED");
+    }
+
+    @Test
+    void generationRejectsInvalidRequestBeforeSaving() throws Exception {
+        MockHttpServletResponse response = mvc.perform(withCsrf(post("/trips"))
+                .header("Authorization", "Bearer " + ownerToken)
+                .contentType("application/json")
+                .content("""
+                        {"name":"Invalid trip","startDate":"2026-12-01","dayCount":0,
+                         "searchArea":{"latitude":40.758,"longitude":-73.9855,"radiusMeters":15000},
+                         "constraints":{"maxPoisPerDay":3,"preferredTypes":[]}}
+                        """)).andReturn().getResponse();
+
+        assertError(response, 400, "INVALID_REQUEST");
+        assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips", Long.class));
+    }
+
     // ---- helpers ----
 
-    /** Saves a trip directly; POST /trips does not exist yet. */
+    /** Saves a trip directly so lifecycle tests do not depend on Google Places. */
     Long trip(String ownerEmail, TripStatus status) {
         Trip trip = new Trip();
         trip.setUser(userRepository.findByEmail(ownerEmail).orElseThrow());
         trip.setName("Hello New York");
         trip.setDayCount(1);
-        trip.setStatus(status.value());
+        trip.setStatus(status);
         return tripRepository.save(trip).getId();
     }
 

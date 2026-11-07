@@ -1,7 +1,7 @@
 package com.travel.itinerary.entity;
 
 /**
- * Lifecycle rules for {@link Trip#getStatus()}, which stores {@link #value()} ("Planning", ...).
+ * Lifecycle rules for {@link Trip#getStatus()}; the converter stores {@link #value()} in SQL.
  *
  * <pre>
  * Planning ──start──▶ Ongoing ──all POIs visited──▶ Completed

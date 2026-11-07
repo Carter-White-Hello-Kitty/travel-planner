@@ -57,7 +57,7 @@ class TripStatusTest {
 
     @Test
     void tripPoiDefaultIsPlanned() {
-        assertEquals(TripPoiStatus.PLANNED, TripPoiStatus.from(new TripPoi().getStatus()));
+        assertEquals(TripPoiStatus.PLANNED, new TripPoi().getStatus());
     }
 
     @Test
