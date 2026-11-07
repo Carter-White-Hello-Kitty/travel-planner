@@ -1,7 +1,6 @@
 package com.travel.journal.service.impl;
 
 import com.travel.journal.service.TravelPostPublishService;
-import com.travel.itinerary.entity.TripStatus;
 import com.travel.journal.entity.TravelPost;
 import com.travel.itinerary.entity.Trip;
 import com.travel.journal.repository.TravelPostRepository;
@@ -48,8 +47,7 @@ public class TravelPostPublishServiceImpl implements TravelPostPublishService {
         if (trip.getUser() == null || !currentUserId.equals(trip.getUser().getId())) {
             throw new ApiError(HttpStatus.FORBIDDEN, "FORBIDDEN", "This trip belongs to another user.");
         }
-        if (!TripStatus.COMPLETED.value().equals(trip.getStatus())
-                && !TripStatus.CANCELLED.value().equals(trip.getStatus())) {
+        if (trip.getStatus() == null || !trip.getStatus().isPublishable()) {
             throw new ApiError(HttpStatus.CONFLICT, "TRIP_NOT_FINISHED",
                     "Only completed or cancelled trips can be posted.");
         }

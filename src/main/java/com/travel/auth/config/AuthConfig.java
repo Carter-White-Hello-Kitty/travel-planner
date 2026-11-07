@@ -57,7 +57,7 @@ public class AuthConfig {
     cors.setAllowCredentials(true);
     cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     cors.setAllowedHeaders(
-        List.of("Content-Type", "Accept", "Authorization", "X-Requested-With", "X-XSRF-TOKEN"));
+        List.of("Content-Type", "Accept", "Authorization", "X-Requested-With", "X-XSRF-TOKEN", "Idempotency-Key"));
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", cors);
     CookieCsrfTokenRepository csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();

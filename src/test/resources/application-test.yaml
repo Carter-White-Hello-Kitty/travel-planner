@@ -3,6 +3,11 @@ spring:
     url: jdbc:mysql://localhost:${DB_PORT:53306}/travel_planner_test?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
     username: travel
     password: ${DB_PASSWORD:local-only-change-me}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:56379}
+      database: ${REDIS_TEST_DATABASE:1}
 auth:
   development-keys: true
   cookie-secure: false

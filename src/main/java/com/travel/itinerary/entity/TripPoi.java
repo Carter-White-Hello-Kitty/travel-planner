@@ -1,7 +1,7 @@
 package com.travel.itinerary.entity;
 
-import com.travel.poisearch.entity.Poi;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -23,9 +23,8 @@ public class TripPoi {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "poi_id", nullable = false)
-    private Poi poi;
+    @Column(name = "google_place_id", nullable = false, length = 225)
+    private String googlePlaceId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "trip_day_id", nullable = false)
@@ -35,5 +34,6 @@ public class TripPoi {
     private Integer sequence;
 
     @Column(nullable = false, length = 20)
-    private String status = "Planned";
+    @Convert(converter = TripPoiStatusConverter.class)
+    private TripPoiStatus status = TripPoiStatus.PLANNED;
 }
