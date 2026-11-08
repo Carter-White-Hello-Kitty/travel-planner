@@ -10,12 +10,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.travel.common.ApiError;
+import com.travel.auth.config.Secrets;
 import com.travel.poisearch.client.GooglePlacesClient;
 import com.travel.poisearch.vo.PoiVO;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,12 +41,15 @@ class WishlistIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate db;
+    @Autowired Secrets secrets;
     @MockitoBean GooglePlacesClient google;
     final JsonMapper json = JsonMapper.builder().build();
 
     static final String PASSWORD = "TravelPlanner!2026",
             ORIGIN = "http://localhost:3000",
-            EMAIL = "wishlist@example.com";
+            EMAIL = "wishlist@example.com",
+            OTHER_EMAIL = "wishlist-other@example.com",
+            TEST_REMOTE_ADDR = "198.51.100.42";
 
     String token;
 
@@ -61,11 +66,24 @@ class WishlistIntegrationTest {
         String name = db.queryForObject("SELECT DATABASE()", String.class);
         if (!"travel_planner_test".equals(name))
             throw new IllegalStateException("Refusing to clean a non-test database");
-        for (String table : List.of(
-                "wishlist",
-                "pwd_reset_tokens", "auth_mail_jobs", "auth_rate_limits",
-                "auth_refresh_tokens", "auth_sessions", "users"))
-            db.update("DELETE FROM " + table);
+        for (Long userId : db.queryForList(
+                "SELECT id FROM users WHERE email IN (?, ?)", Long.class, EMAIL, OTHER_EMAIL)) {
+            db.update("DELETE FROM wishlist WHERE user_id = ?", userId);
+            db.update("DELETE FROM pwd_reset_tokens WHERE user_id = ?", userId);
+            db.update("DELETE FROM auth_refresh_tokens WHERE session_id IN "
+                    + "(SELECT id FROM auth_sessions WHERE user_id = ?)", userId);
+            db.update("DELETE FROM auth_sessions WHERE user_id = ?", userId);
+            db.update("DELETE FROM users WHERE id = ?", userId);
+            for (String action : List.of("list", "add", "remove"))
+                deleteRateBucket("wishlist:" + action + ":" + userId);
+        }
+        db.update("DELETE FROM auth_mail_jobs WHERE email IN (?, ?)", EMAIL, OTHER_EMAIL);
+        deleteRateBucket("register:" + TEST_REMOTE_ADDR);
+        deleteRateBucket("login-ip:" + TEST_REMOTE_ADDR);
+    }
+
+    private void deleteRateBucket(String key) {
+        db.update("DELETE FROM auth_rate_limits WHERE bucket_key LIKE ?", secrets.rateHash(key) + ":%");
     }
 
     // ---- 主流程 ----
@@ -79,6 +97,23 @@ class WishlistIntegrationTest {
         assertEquals("Wishlist retrieved successfully", body.get("message").asText());
         assertTrue(body.get("data").get("items").isEmpty());
         assertEquals(0, body.get("data").get("pagination").get("totalItems").asLong());
+    }
+
+    @Test
+    void cleanupPreservesAnotherUsersWishlist() {
+        String email = "unrelated-wishlist-" + UUID.randomUUID() + "@example.com";
+        db.update("INSERT INTO users (email, password_hash) VALUES (?, ?)", email, "unused");
+        Long userId = db.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+        db.update("INSERT INTO wishlist (user_id, google_place_id, created_at) VALUES (?, ?, ?)",
+                userId, "unrelated-place", LocalDateTime.now());
+        try {
+            clean();
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM users WHERE id = ?", Integer.class, userId));
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM wishlist WHERE user_id = ?", Integer.class, userId));
+        } finally {
+            db.update("DELETE FROM wishlist WHERE user_id = ?", userId);
+            db.update("DELETE FROM users WHERE id = ?", userId);
+        }
     }
 
     @Test
@@ -141,7 +176,7 @@ class WishlistIntegrationTest {
 
     @Test
     void removingAnotherUsersItemIsNotFound() throws Exception {
-        String other = registerAndLogin("wishlist-other@example.com");
+        String other = registerAndLogin(OTHER_EMAIL);
         assertEquals(201, addCall("place-private", token).getStatus());
 
         assertError(deleteCall("/wishlist/place-private", other), 404, "WISHLIST_ITEM_NOT_FOUND");
@@ -252,7 +287,8 @@ class WishlistIntegrationTest {
     }
 
     int count() {
-        return db.queryForObject("SELECT COUNT(*) FROM wishlist", Integer.class);
+        return db.queryForObject("SELECT COUNT(*) FROM wishlist w JOIN users u ON u.id = w.user_id "
+                + "WHERE u.email = ?", Integer.class, EMAIL);
     }
 
     List<String> ids(MockHttpServletResponse r) throws Exception {
@@ -296,6 +332,7 @@ class WishlistIntegrationTest {
 
     MockHttpServletResponse authPost(String path, Object body) throws Exception {
         MockHttpServletRequestBuilder request = withCsrf(post(path))
+                .with(req -> { req.setRemoteAddr(TEST_REMOTE_ADDR); return req; })
                 .header("Origin", ORIGIN)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .contentType("application/json")
