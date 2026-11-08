@@ -9,10 +9,15 @@ spring:
   config:
     import: optional:file:.env[.properties]
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/travel_planner?serverTimezone=UTC&characterEncoding=UTF-8
-    username: ${DB_USERNAME:root}
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:53306}/travel_planner?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:travel}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:56379}
+      database: ${REDIS_DATABASE:0}
   sql:
     init:
       mode: always
@@ -31,6 +36,19 @@ spring:
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
+google:
+  places:
+    api-key: ${GOOGLE_PLACES_API_KEY:}
+    connect-timeout: 2s
+    request-timeout: 5s
+
+itinerary:
+  generation:
+    max-duration: 10m
+    processing-ttl: 15m
+    completed-ttl: 24h
+    rate-limit: 5
+    rate-window-seconds: 60
 
 auth:
   origins: ${AUTH_ORIGINS:http://localhost:3000}

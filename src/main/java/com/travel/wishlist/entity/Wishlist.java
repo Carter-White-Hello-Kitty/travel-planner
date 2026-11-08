@@ -1,7 +1,6 @@
 package com.travel.wishlist.entity;
 
 import com.travel.auth.entity.User;
-import com.travel.poisearch.entity.Poi;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -12,10 +11,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -23,8 +21,8 @@ import java.time.LocalDateTime;
 @Table(
         name = "wishlist",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_wishlist_user_poi",
-                columnNames = {"user_id", "poi_id"}
+                name = "uq_wishlist_user_google_place",
+                columnNames = {"user_id", "google_place_id"}
         )
 )
 public class Wishlist {
@@ -37,9 +35,8 @@ public class Wishlist {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "poi_id", nullable = false)
-    private Poi poi;
+    @Column(name = "google_place_id", nullable = false, length = 225)
+    private String googlePlaceId;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

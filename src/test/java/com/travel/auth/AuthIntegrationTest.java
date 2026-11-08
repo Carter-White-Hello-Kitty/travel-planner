@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 import com.travel.auth.security.Ownership;
+import com.travel.auth.config.Secrets;
 import com.travel.auth.service.AuthService;
 import com.travel.auth.support.MailWorker;
 import com.travel.auth.service.TokenService;
@@ -38,6 +39,7 @@ import tools.jackson.databind.json.JsonMapper;
 class AuthIntegrationTest {
   @Autowired MockMvc mvc;
   @Autowired JdbcTemplate db;
+  @Autowired Secrets secrets;
   @Autowired AuthService auth;
   @Autowired MailWorker worker;
   @Autowired TestClock clock;
@@ -80,16 +82,25 @@ class AuthIntegrationTest {
   @BeforeEach
   void clean() {
     String name = db.queryForObject("SELECT DATABASE()", String.class);
-    if (!"travel_planner_auth_test".equals(name))
+    if (!"travel_planner_test".equals(name))
       throw new IllegalStateException("Refusing to clean a non-test database");
-    for (String table :
-        List.of(
-            "auth_mail_jobs",
-            "auth_rate_limits",
-            "pwd_reset_tokens",
-            "auth_refresh_tokens",
-            "auth_sessions",
-            "users")) db.update("DELETE FROM " + table);
+    for (Long userId : db.queryForList("SELECT id FROM users WHERE email = ?", Long.class, EMAIL)) {
+      db.update("DELETE FROM pwd_reset_tokens WHERE user_id = ?", userId);
+      db.update("DELETE FROM auth_refresh_tokens WHERE session_id IN "
+          + "(SELECT id FROM auth_sessions WHERE user_id = ?)", userId);
+      db.update("DELETE FROM auth_sessions WHERE user_id = ?", userId);
+      db.update("DELETE FROM users WHERE id = ?", userId);
+    }
+    db.update("DELETE FROM auth_mail_jobs WHERE email IN (?, ?)", EMAIL, "missing@example.com");
+    for (String key : List.of(
+        "register:127.0.0.1", "login-ip:127.0.0.1",
+        "login-failed:" + EMAIL + ":127.0.0.1",
+        "login-failed:absent@example.com:127.0.0.1",
+        "reset-request-ip:127.0.0.1", "reset-email:" + EMAIL,
+        "reset-email:missing@example.com", "reset-ip:127.0.0.1",
+        "logout:127.0.0.1", "refresh-ip:127.0.0.1")) {
+      db.update("DELETE FROM auth_rate_limits WHERE bucket_key LIKE ?", secrets.rateHash(key) + ":%");
+    }
     clock.now = Instant.parse("2026-10-25T12:00:00Z");
     reset(mail);
   }
@@ -164,7 +175,7 @@ class AuthIntegrationTest {
             .andReturn();
     assertEquals(201, result.getResponse().getStatus());
     assertEquals(EMAIL, data(result).get("user").get("email").asText());
-    String hash = db.queryForObject("SELECT password_hash FROM users", String.class);
+    String hash = db.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, EMAIL);
     assertTrue(hash.startsWith("$argon2id$"));
     assertFalse(hash.contains(PASSWORD));
     assertNull(result.getResponse().getCookie("refresh_token"));
@@ -412,16 +423,16 @@ class AuthIntegrationTest {
     doThrow(new MailSendException("test smtp down")).when(mail).send(any(SimpleMailMessage.class));
     postJson("/auth/request-reset-pwd", Map.of("email", EMAIL));
     worker.processOne();
-    assertEquals("READY", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
-    assertEquals(1, db.queryForObject("SELECT attempts FROM auth_mail_jobs", Integer.class));
+    assertEquals("READY", db.queryForObject("SELECT status FROM auth_mail_jobs WHERE email = ?", String.class, EMAIL));
+    assertEquals(1, db.queryForObject("SELECT attempts FROM auth_mail_jobs WHERE email = ?", Integer.class, EMAIL));
     byte[] payload =
-        db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs", byte[].class);
+        db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs WHERE email = ?", byte[].class, EMAIL);
     assertNotNull(payload);
     clock.advance(61);
     doNothing().when(mail).send(any(SimpleMailMessage.class));
     worker.processOne();
-    assertEquals("SENT", db.queryForObject("SELECT status FROM auth_mail_jobs", String.class));
-    assertNull(db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs", byte[].class));
+    assertEquals("SENT", db.queryForObject("SELECT status FROM auth_mail_jobs WHERE email = ?", String.class, EMAIL));
+    assertNull(db.queryForObject("SELECT encrypted_payload FROM auth_mail_jobs WHERE email = ?", byte[].class, EMAIL));
   }
 
   @Test

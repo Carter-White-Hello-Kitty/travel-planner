@@ -1,6 +1,8 @@
 package com.travel.itinerary.entity;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -29,6 +31,14 @@ public class TripDay {
     @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
 
-    @OneToMany(mappedBy = "tripDay")
+    @Column(name = "day_number")
+    private Integer dayNumber;
+
+    @OneToMany(mappedBy = "tripDay", cascade = CascadeType.PERSIST)
     private List<TripPoi> tripPois = new ArrayList<>();
+
+    public void addPoi(TripPoi poi) {
+        tripPois.add(poi);
+        poi.setTripDay(this);
+    }
 }
