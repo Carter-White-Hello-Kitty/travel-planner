@@ -21,6 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /** Opt-in: real test MySQL + local ES. Never clears unrelated database rows or indexes. */
 @SpringBootTest(properties={"auth.worker-enabled=false", "journal.search.worker-enabled=false"})
@@ -52,7 +53,7 @@ class JournalSearchIntegrationTest {
   }
 
   @Test void realAuthenticationDatabaseQueueAndElasticsearchWorkTogether() throws Exception {
-    assertEquals("travel_planner_auth_test",db.queryForObject("SELECT DATABASE()",String.class));
+    assertEquals("travel_planner_test",db.queryForObject("SELECT DATABASE()",String.class));
     String email="journal-"+UUID.randomUUID()+"@example.com";
     long owner=auth.register(email,"TravelPlanner!2026").getId(); users.add(owner);
     long other=auth.register("other-"+UUID.randomUUID()+"@example.com","TravelPlanner!2026").getId(); users.add(other);
@@ -85,6 +86,31 @@ class JournalSearchIntegrationTest {
     var page=mvc.perform(get("/travel-posts").param("keyword","海边").param("pageSize","1")
         .header("Authorization","Bearer "+token)).andReturn().getResponse();
     assertEquals(1,json.readTree(page.getContentAsString()).path("data").path("items").size());
+    // Exercise the teammate's real POST controller, CSRF, event, and transactional queue.
+    var handshake=mvc.perform(get("/auth/csrf")).andReturn();
+    var csrf=json.readTree(handshake.getResponse().getContentAsString()).path("data").path("token").asText();
+    long tripId=db.queryForObject("SELECT trip_id FROM travel_posts WHERE id=?",Long.class,beach);
+    var published=mvc.perform(post("/travel-posts")
+        .header("Authorization","Bearer "+token).header("X-XSRF-TOKEN",csrf)
+        .cookie(handshake.getResponse().getCookie("XSRF-TOKEN"))
+        .contentType("application/json").content(json.writeValueAsString(Map.of(
+            "trip_id",tripId,"content","publishsearchhandoffprobe",
+            "photos",List.of("https://example.com/beach.jpg"))))).andReturn().getResponse();
+    assertEquals(201,published.getStatus(),published.getContentAsString());
+    long newPost=json.readTree(published.getContentAsString()).path("data").path("id").asLong();
+    posts.add(newPost);
+    long version=db.queryForObject("SELECT revision FROM journal_search_jobs WHERE post_id=?",Long.class,newPost);
+    indexing.process(newPost,version);
+    HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(ES+"/"+INDEX+"/_refresh"))
+        .POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.discarding());
+    var found=mvc.perform(get("/travel-posts").param("keyword","publishsearchhandoffprobe")
+        .header("Authorization","Bearer "+token)).andReturn().getResponse();
+    assertEquals(200,found.getStatus(),found.getContentAsString());
+    var foundItems=json.readTree(found.getContentAsString()).path("data").path("items");
+    assertEquals(1,foundItems.size());
+    assertEquals(newPost,foundItems.get(0).path("id").asLong());
+    assertEquals("https://example.com/beach.jpg",foundItems.get(0).path("photos").get(0).asText());
+
   }
 
   @AfterEach void cleanup() throws Exception {

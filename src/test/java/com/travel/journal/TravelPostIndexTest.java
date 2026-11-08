@@ -4,6 +4,7 @@ package com.travel.journal;
 
 import com.travel.auth.entity.User;
 import com.travel.itinerary.entity.Trip;
+import com.travel.itinerary.entity.TripStatus;
 import com.travel.journal.entity.TravelPost;
 import com.travel.journal.repository.TravelPostRepository;
 import com.travel.journal.search.*;
@@ -21,7 +22,7 @@ class TravelPostIndexTest {
     var es=mock(ElasticsearchGateway.class);
     var index=new TravelPostIndexService(jdbc,posts,es);
     User user=new User();user.setId(1L);
-    Trip trip=new Trip();trip.setId(12L);trip.setUser(user);trip.setStatus("Completed");
+    Trip trip=new Trip();trip.setId(12L);trip.setUser(user);trip.setStatus(TripStatus.COMPLETED);
     TravelPost post=new TravelPost();post.setId(101L);post.setTrip(trip);post.setContent("海边");
     when(posts.findById(101L)).thenReturn(Optional.of(post));
     doThrow(new JournalSearchException("offline")).doNothing().when(es).upsert(101L,12L,1L,"海边");

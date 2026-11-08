@@ -6,6 +6,7 @@ import com.travel.auth.entity.User;
 import com.travel.auth.service.TokenService;
 import com.travel.common.ApiError;
 import com.travel.itinerary.entity.Trip;
+import com.travel.itinerary.entity.TripStatus;
 import com.travel.journal.controller.TravelPostSearchController;
 import com.travel.journal.entity.TravelPost;
 import com.travel.journal.repository.TravelPostRepository;
@@ -26,7 +27,7 @@ class TravelPostSearchTest {
 
   private TravelPost post(long id, long owner, String status, String photos) {
     User user = new User(); user.setId(owner);
-    Trip trip = new Trip(); trip.setId(12L); trip.setUser(user); trip.setStatus(status);
+    Trip trip = new Trip(); trip.setId(12L); trip.setUser(user); trip.setStatus(TripStatus.from(status));
     TravelPost post = new TravelPost(); post.setId(id); post.setTrip(trip);
     post.setContent("海边"); post.setPhotos(photos); return post;
   }

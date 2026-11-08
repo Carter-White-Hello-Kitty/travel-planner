@@ -39,7 +39,7 @@ public class TravelPostIndexService {
   @Transactional
   public void process(Long postId, long revision) {
     var post = posts.findById(postId).orElse(null);
-    if (post == null || !List.of("Completed", "Cancelled").contains(post.getTrip().getStatus())) {
+    if (post == null || (post.getTrip().getStatus() == null || !post.getTrip().getStatus().isPublishable())) {
       es.delete(postId);
     } else {
       es.upsert(post.getId(), post.getTrip().getId(), post.getTrip().getUser().getId(), post.getContent());

@@ -63,14 +63,9 @@ curl -G http://localhost:8085/travel-posts \
 
 ## 发布负责人的接入方式
 
-注入 `TravelPostIndexService`；在已有发布业务的同一个 `@Transactional` 方法中：
+最新 test 已提供 `TravelPostPublishService.TravelPostPublished` 事件。新增 `TravelPostPublishedListener` 同步监听该事件，并在发布的同一事务中调用 `TravelPostIndexService.enqueue(event.id())`，无需改搭档的发布实现。事件监听不是异步，也不是 AFTER_COMMIT，因此队列与帖子一起提交/回滚。
 
-```java
-TravelPost saved = travelPostRepository.save(post);
-travelPostIndexService.enqueue(saved.getId());
-```
-
-`enqueue` 强制要求调用方已有事务。帖子和待同步任务一起提交/回滚，不要直接在 Controller 调用 enqueue。新增表 `journal_search_jobs` 已加入 schema.sql，无需改变 TravelPost 或搭档的 POST 设计。
+`enqueue` 强制要求已有事务。未来新增修改或删除接口时，可在其事务内调用 enqueue；不要在 Controller 或事务提交后直接调用。新增表 `journal_search_jobs` 已加入 schema.sql。
 
 worker 每轮扫描一页 MySQL 历史帖子（100 条）补队列，再处理最多 100 个任务。ES 成功后删除对应 revision 的任务；失败保留并在下一轮重试。revision 避免并发更新时误删新任务。稳定数据也周期重扫，支持 ES 索引丢失后恢复。大规模数据不应持续全表扫描，MVP 后可以换为只处理事件并单独提供重建任务。
 
@@ -90,6 +85,8 @@ worker 每轮扫描一页 MySQL 历史帖子（100 条）补队列，再处理�
 
 ## 验证命令
 
+2026-11-08：合入最新 `origin/test`（27b156a），适配 TripStatus 枚举与搭档发布事件。执行 `./mvnw -q clean verify -Djournal.es.integration=true`：137 项通过，0 失败/错误/跳过。新增验证通过真实 POST（JWT + CSRF）发布后，事件登记任务、写入真实 ES、GET 搜索返回新帖子及照片。测试期间 worker 关闭，由测试调用任务处理方法确定性验证；定时触发本身不属于该集成测试范围。
+
 2026-11-01 已执行 `./mvnw -q clean verify -Djournal.es.integration=true`：32 项测试通过，0 失败/错误/跳过，包含原有 21 项测试和新增 11 项搜索相关测试。真实依赖为 MySQL 8.4、ES 9.5.5。使用本机 Java 24 编译，项目编译目标仍为 Java 17；未单独在 JDK 17 进程验证。真实集成使用 MockMvc 经过 Spring MVC 与认证过滤器，数据库与 ES 均为真实服务，不是启动外部 8085 服务的浏览器测试。
 
 模块测试不依赖 MySQL 或真实 ES（HTTP 网关使用本机测试服务器）：
@@ -105,4 +102,4 @@ docker compose up -d mysql mailpit
 ./mvnw -Dtest=JournalSearchIntegrationTest -Djournal.es.integration=true test
 ```
 
-使用唯一 ES 临时索引和自己创建的数据库记录，完成后清理；仅允许 `travel_planner_auth_test`。覆盖真实认证、中文搜索、分页、用户隔离、非终态排除、队列事务回滚与同步。默认不执行此可选测试，不增加其他同学日常测试对 ES 的依赖。
+使用唯一 ES 临时索引和自己创建的数据库记录，完成后清理；仅允许 `travel_planner_test`。覆盖真实认证、中文搜索、分页、用户隔离、非终态排除、队列事务回滚与同步。默认不执行此可选测试，不增加其他同学日常测试对 ES 的依赖。

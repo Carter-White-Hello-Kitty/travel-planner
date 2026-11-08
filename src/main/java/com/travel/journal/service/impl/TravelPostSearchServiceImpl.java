@@ -56,7 +56,7 @@ public class TravelPostSearchServiceImpl implements TravelPostSearchService {
       TravelPost post = stored.get(id);
       // Recheck current DB ownership/status, never trust an outdated search replica for access control.
       if (post == null || !userId.equals(post.getTrip().getUser().getId())
-          || !Set.of("Completed", "Cancelled").contains(post.getTrip().getStatus())) continue;
+          || (post.getTrip().getStatus() == null || !post.getTrip().getStatus().isPublishable())) continue;
       items.add(new TravelPostView(post.getId(), post.getTrip().getId(), post.getContent(), photos(post.getPhotos())));
     }
     long total = result.path("hits").path("total").path("value").asLong();
