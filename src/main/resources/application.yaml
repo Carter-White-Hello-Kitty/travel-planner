@@ -43,3 +43,12 @@ auth:
   rate-key: ${AUTH_RATE_KEY:}
   mail-from: ${MAIL_FROM:no-reply@travel-planner.local}
   worker-enabled: true
+
+# Sida Xue — Travel Journal Search：ES 连接与同步任务配置。
+journal:
+  search:
+    url: ${JOURNAL_ES_URL:http://127.0.0.1:19200}
+    index: ${JOURNAL_ES_INDEX:travel-posts-java}
+    api-key: ${JOURNAL_ES_API_KEY:}
+    worker-enabled: ${JOURNAL_SEARCH_WORKER_ENABLED:false}
+    sync-delay-ms: ${JOURNAL_SEARCH_SYNC_DELAY_MS:30000}

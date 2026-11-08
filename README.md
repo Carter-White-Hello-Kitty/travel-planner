@@ -170,3 +170,7 @@ git diff
 ```
 
 确认只提交本次功能需要的文件，并且**没有 `.env`、密码、访问令牌或其他本地私密配置**（`.gitignore` 已忽略这些文件，但提交前仍需自查）。
+
+## Travel Journal 搜索
+
+Java 搜索接口、Elasticsearch 配置、与发布模块的事务交接及测试见 [搜索模块说明](docs/journal-search.md)。首次使用需启用索引 worker；默认不增加其他模块启动时对 ES 的依赖。

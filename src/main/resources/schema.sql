@@ -113,3 +113,11 @@ CREATE TABLE IF NOT EXISTS auth_worker_lock
 );
 
 INSERT IGNORE INTO auth_worker_lock (id) VALUES (1);
+
+-- Sida Xue — Travel Journal Search：新增持久化索引任务表，支持失败重试。
+-- Durable indexing jobs, independent of the publishing module's entity model.
+CREATE TABLE IF NOT EXISTS journal_search_jobs
+(
+    post_id BIGINT PRIMARY KEY,
+    revision BIGINT NOT NULL DEFAULT 1
+);
