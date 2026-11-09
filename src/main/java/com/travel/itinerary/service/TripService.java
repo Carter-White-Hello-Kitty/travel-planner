@@ -28,7 +28,7 @@ public interface TripService {
     /** Planning → Ongoing. */
     void start(TokenService.Identity identity, Long tripId);
 
-    /** Planning or Ongoing → Cancelled. */
+    /** Ongoing → Cancelled. */
     void cancel(TokenService.Identity identity, Long tripId);
 
     /** Deletes a Planning trip with its days, POIs and generation record. */

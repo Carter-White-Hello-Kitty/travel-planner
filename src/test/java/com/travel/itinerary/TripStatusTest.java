@@ -15,7 +15,6 @@ class TripStatusTest {
 
     private static final Set<String> TRIP_EDGES = Set.of(
             "Planning->Ongoing",
-            "Planning->Cancelled",
             "Ongoing->Completed",
             "Ongoing->Cancelled");
 

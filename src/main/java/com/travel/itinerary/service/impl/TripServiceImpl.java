@@ -446,26 +446,26 @@ public class TripServiceImpl implements TripService {
             throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS",
                     "Only Planning trips can be deleted");
 
-        List<String> cacheKeys = generationRequests.findByTripId(tripId).stream()
+        String cacheKey = generationRequests.findByTripId(tripId)
                 .map(r -> RedisConstant.TRIP_GENERATION_KEY_PREFIX + r.getUserId() + ":" + r.getRequestId())
-                .toList();
+                .orElse(null);
         // Children before parents: POIs point to days; days and generation records point to the trip.
         tripPoiRepository.deleteByTripId(tripId);
         tripDayRepository.deleteByTripId(tripId);
         generationRequests.deleteByTripId(tripId);
         tripRepository.delete(trip);
-        if (!cacheKeys.isEmpty()) deleteCachedGenerationsAfterCommit(cacheKeys);
+        if (cacheKey != null) deleteCachedGenerationAfterCommit(cacheKey);
     }
 
     /** Stops an Idempotency-Key replay from returning the deleted trip; MySQL stays the source of truth. */
-    private void deleteCachedGenerationsAfterCommit(List<String> keys) {
+    private void deleteCachedGenerationAfterCommit(String key) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 try {
-                    redis.delete(keys);
+                    redis.delete(key);
                 } catch (RuntimeException e) {
-                    log.warn("Deleted trip, but could not clear {} cached generation result(s)", keys.size(), e);
+                    log.warn("Deleted trip, but could not clear its cached generation result", e);
                 }
             }
         });

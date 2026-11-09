@@ -127,11 +127,11 @@ class TripLifecycleIntegrationTest {
     }
 
     @Test
-    void cancelMovesPlanningTripToCancelled() throws Exception {
+    void cancellingAPlanningTripIsRejected() throws Exception {
         Long id = trip(OWNER, TripStatus.PLANNING);
 
-        assertEquals(200, call("/trips/" + id + "/cancel", ownerToken).getStatus());
-        assertEquals("Cancelled", statusOf(id));
+        assertError(call("/trips/" + id + "/cancel", ownerToken), 409, "INVALID_TRIP_STATUS");
+        assertEquals("Planning", statusOf(id));
     }
 
     @Test
