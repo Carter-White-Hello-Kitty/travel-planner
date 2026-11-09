@@ -31,11 +31,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -51,6 +53,7 @@ class TripLifecycleIntegrationTest {
     @Autowired UserRepository userRepository;
     @Autowired TripRepository tripRepository;
     @Autowired TripService tripService;
+    @Autowired StringRedisTemplate redis;
     @MockitoBean GooglePlacesClient google;
     final JsonMapper json = JsonMapper.builder().build();
 
@@ -124,11 +127,76 @@ class TripLifecycleIntegrationTest {
     }
 
     @Test
-    void cancellingAPlanningTripIsRejected() throws Exception {
+    void cancelMovesPlanningTripToCancelled() throws Exception {
         Long id = trip(OWNER, TripStatus.PLANNING);
 
-        assertError(call("/trips/" + id + "/cancel", ownerToken), 409, "INVALID_TRIP_STATUS");
-        assertEquals("Planning", statusOf(id));
+        assertEquals(200, call("/trips/" + id + "/cancel", ownerToken).getStatus());
+        assertEquals("Cancelled", statusOf(id));
+    }
+
+    @Test
+    void cancellingAFinishedTripIsRejected() throws Exception {
+        for (TripStatus status : List.of(TripStatus.COMPLETED, TripStatus.CANCELLED)) {
+            Long id = trip(OWNER, status);
+
+            assertError(call("/trips/" + id + "/cancel", ownerToken), 409, "INVALID_TRIP_STATUS");
+            assertEquals(status.value(), statusOf(id));
+        }
+    }
+
+    @Test
+    void deleteRemovesPlanningTripWithItsDaysPoisAndGenerationRecord() throws Exception {
+        Trip trip = tripWithPois(OWNER, TripStatus.PLANNING, TripPoiStatus.PLANNED, TripPoiStatus.PLANNED);
+        Long userId = trip.getUser().getId();
+        String requestId = UUID.randomUUID().toString();
+        db.update("INSERT INTO trip_generation_requests (user_id, request_id, request_hash, trip_id, created_at) "
+                + "VALUES (?, ?, ?, ?, NOW(6))", userId, requestId, "0".repeat(64), trip.getId());
+        String cacheKey = "trip:generate:" + userId + ":" + requestId;
+        redis.opsForValue().set(cacheKey, "{\"status\":\"COMPLETED\"}");
+
+        try {
+            MockHttpServletResponse r = deleteTrip(trip.getId(), ownerToken);
+
+            assertEquals(200, r.getStatus(), r.getContentAsString());
+            JsonNode body = json.readTree(r.getContentAsString());
+            assertEquals("success", body.get("message").asText());
+            assertTrue(body.get("data").isNull());
+            assertEquals(0, rowsFor(trip.getId()));
+            assertFalse(redis.hasKey(cacheKey));
+            assertError(detail(trip.getId(), ownerToken), 404, "RESOURCE_NOT_FOUND");
+        } finally {
+            redis.delete(cacheKey);
+        }
+    }
+
+    @Test
+    void deleteWorksForAPlanningTripWithNoDaysOrGenerationRecord() throws Exception {
+        Long id = trip(OWNER, TripStatus.PLANNING);
+
+        assertEquals(200, deleteTrip(id, ownerToken).getStatus());
+        assertEquals(0, rowsFor(id));
+    }
+
+    @Test
+    void deleteRejectsTripsThatAreNoLongerPlanning() throws Exception {
+        for (TripStatus status : List.of(TripStatus.ONGOING, TripStatus.COMPLETED, TripStatus.CANCELLED)) {
+            Trip trip = tripWithPois(OWNER, status, TripPoiStatus.VISITED, TripPoiStatus.PLANNED);
+
+            assertError(deleteTrip(trip.getId(), ownerToken), 409, "INVALID_TRIP_STATUS");
+            assertEquals(status.value(), statusOf(trip.getId()));
+            assertEquals(6, rowsFor(trip.getId()));
+        }
+    }
+
+    @Test
+    void deleteRejectsOtherUsersMissingTripsAndAnonymousRequests() throws Exception {
+        Trip trip = tripWithPois(OWNER, TripStatus.PLANNING, TripPoiStatus.PLANNED, TripPoiStatus.PLANNED);
+        String otherToken = registerAndLogin(OTHER);
+
+        assertError(deleteTrip(trip.getId(), otherToken), 403, "FORBIDDEN");
+        assertError(deleteTrip(999999L, ownerToken), 404, "RESOURCE_NOT_FOUND");
+        assertError(deleteTrip(trip.getId(), null), 401, "AUTH_REQUIRED");
+        assertEquals(6, rowsFor(trip.getId()));
     }
 
     @Test
@@ -353,6 +421,22 @@ class TripLifecycleIntegrationTest {
 
     String statusOf(Long tripId) {
         return db.queryForObject("SELECT status FROM trips WHERE id = ?", String.class, tripId);
+    }
+
+    /** Trip, day, POI and generation-request rows that belong to one trip (tripWithPois makes 6). */
+    int rowsFor(Long tripId) {
+        return db.queryForObject("SELECT (SELECT COUNT(*) FROM trips WHERE id = ?)"
+                + " + (SELECT COUNT(*) FROM trip_days WHERE trip_id = ?)"
+                + " + (SELECT COUNT(*) FROM trip_pois tp JOIN trip_days d ON d.id = tp.trip_day_id"
+                + " WHERE d.trip_id = ?)"
+                + " + (SELECT COUNT(*) FROM trip_generation_requests WHERE trip_id = ?)",
+                Integer.class, tripId, tripId, tripId, tripId);
+    }
+
+    MockHttpServletResponse deleteTrip(Long tripId, String accessToken) throws Exception {
+        MockHttpServletRequestBuilder request = withCsrf(MockMvcRequestBuilders.delete("/trips/" + tripId));
+        if (accessToken != null) request.header("Authorization", "Bearer " + accessToken);
+        return mvc.perform(request).andReturn().getResponse();
     }
 
     String poiStatusOf(Long tripPoiId) {

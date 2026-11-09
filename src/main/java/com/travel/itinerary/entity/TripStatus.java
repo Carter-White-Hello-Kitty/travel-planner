@@ -5,8 +5,11 @@ package com.travel.itinerary.entity;
  *
  * <pre>
  * Planning ──start──▶ Ongoing ──all POIs visited──▶ Completed
- *                        └──────────cancel─────────▶ Cancelled
+ *    │                   │
+ *    └──cancel──▶ Cancelled ◀──cancel──┘
  * </pre>
+ *
+ * <p>A Planning trip may also be deleted outright; that is not a status change.
  */
 public enum TripStatus {
     PLANNING("Planning"),
@@ -36,7 +39,7 @@ public enum TripStatus {
     /** Whether a trip in this status may move to {@code next}. */
     public boolean canTransitionTo(TripStatus next) {
         return switch (this) {
-            case PLANNING -> next == ONGOING;
+            case PLANNING -> next == ONGOING || next == CANCELLED;
             case ONGOING -> next == COMPLETED || next == CANCELLED;
             case COMPLETED, CANCELLED -> false;
         };

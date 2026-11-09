@@ -41,6 +41,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -51,6 +53,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.databind.json.JsonMapper;
@@ -58,6 +62,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 @Validated
 public class TripServiceImpl implements TripService {
+    private static final Logger log = LoggerFactory.getLogger(TripServiceImpl.class);
     private static final String PROCESSING = "PROCESSING";
     private static final String COMPLETED = "COMPLETED";
     private static final DefaultRedisScript<Long> RELEASE_OWN_PROCESSING;
@@ -428,6 +433,42 @@ public class TripServiceImpl implements TripService {
     @Transactional
     public void cancel(TokenService.Identity identity, Long tripId) {
         changeStatus(identity, tripId, TripStatus.CANCELLED);
+    }
+
+    @Override
+    @Transactional
+    public void delete(TokenService.Identity identity, Long tripId) {
+        // Same lock as start/cancel/check-in, so a delete cannot race a status change.
+        Trip trip = tripRepository.findByIdForUpdate(tripId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
+        Ownership.requireOwner(identity, trip.getUser().getId());
+        if (trip.getStatus() != TripStatus.PLANNING)
+            throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS",
+                    "Only Planning trips can be deleted");
+
+        List<String> cacheKeys = generationRequests.findByTripId(tripId).stream()
+                .map(r -> RedisConstant.TRIP_GENERATION_KEY_PREFIX + r.getUserId() + ":" + r.getRequestId())
+                .toList();
+        // Children before parents: POIs point to days; days and generation records point to the trip.
+        tripPoiRepository.deleteByTripId(tripId);
+        tripDayRepository.deleteByTripId(tripId);
+        generationRequests.deleteByTripId(tripId);
+        tripRepository.delete(trip);
+        if (!cacheKeys.isEmpty()) deleteCachedGenerationsAfterCommit(cacheKeys);
+    }
+
+    /** Stops an Idempotency-Key replay from returning the deleted trip; MySQL stays the source of truth. */
+    private void deleteCachedGenerationsAfterCommit(List<String> keys) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    redis.delete(keys);
+                } catch (RuntimeException e) {
+                    log.warn("Deleted trip, but could not clear {} cached generation result(s)", keys.size(), e);
+                }
+            }
+        });
     }
 
     @Override
