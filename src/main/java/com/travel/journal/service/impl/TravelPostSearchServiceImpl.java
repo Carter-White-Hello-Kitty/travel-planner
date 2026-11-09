@@ -37,8 +37,7 @@ public class TravelPostSearchServiceImpl implements TravelPostSearchService {
       throw ApiError.invalid("search", "Invalid keyword or pagination parameters");
     Map<String, Object> fullText = text.isEmpty() ? Map.of("match_all", Map.of())
         : Map.of("match", Map.of("content", text));
-    Map<String, Object> query = Map.of("query", Map.of("bool", Map.of(
-        "must", List.of(fullText), "filter", List.of(Map.of("term", Map.of("user_id", userId))))),
+    Map<String, Object> query = Map.of("query", fullText,
         "from", (page - 1) * pageSize, "size", pageSize, "track_total_hits", true,
         "sort", List.of(Map.of("_score", "desc"), Map.of("id", "desc")));
     JsonNode result;
@@ -54,9 +53,9 @@ public class TravelPostSearchServiceImpl implements TravelPostSearchService {
     List<TravelPostView> items = new ArrayList<>();
     for (Long id : ids) {
       TravelPost post = stored.get(id);
-      // Recheck current DB ownership/status, never trust an outdated search replica for access control.
-      if (post == null || !userId.equals(post.getTrip().getUser().getId())
-          || (post.getTrip().getStatus() == null || !post.getTrip().getStatus().isPublishable())) continue;
+      // Published journals are shared across users; recheck current DB state, not authorship.
+      if (post == null || post.getTrip().getStatus() == null
+          || !post.getTrip().getStatus().isPublishable()) continue;
       items.add(new TravelPostView(post.getId(), post.getTrip().getId(), post.getContent(), photos(post.getPhotos())));
     }
     long total = result.path("hits").path("total").path("value").asLong();

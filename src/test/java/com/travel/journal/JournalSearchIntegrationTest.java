@@ -60,7 +60,7 @@ class JournalSearchIntegrationTest {
     String token=auth.login(email,"TravelPlanner!2026",null).access().value();
     long beach=addPost(owner,"Completed","海边散步");
     addPost(owner,"Cancelled","海边日落");
-    addPost(other,"Completed","海边 private-other-user");
+    addPost(other,"Completed","海边 shared-other-user");
     addPost(owner,"Ongoing","海边 unfinished");
     var tx=new TransactionTemplate(transactions);
     tx.executeWithoutResult(status->{indexing.enqueue(beach);status.setRollbackOnly();});
@@ -76,9 +76,9 @@ class JournalSearchIntegrationTest {
         .header("Authorization","Bearer "+token)).andReturn().getResponse();
     assertEquals(200,response.getStatus(),response.getContentAsString());
     var body=json.readTree(response.getContentAsString());
-    assertEquals(2,body.path("data").path("items").size());
-    assertEquals(2,body.path("data").path("pagination").path("totalItems").asInt());
-    assertFalse(response.getContentAsString().contains("private-other-user"));
+    assertEquals(3,body.path("data").path("items").size());
+    assertEquals(3,body.path("data").path("pagination").path("totalItems").asInt());
+    assertTrue(response.getContentAsString().contains("shared-other-user"));
     assertFalse(response.getContentAsString().contains("unfinished"));
     assertEquals(401,mvc.perform(get("/travel-posts")).andReturn().getResponse().getStatus());
     assertEquals(400,mvc.perform(get("/travel-posts").param("page","abc")

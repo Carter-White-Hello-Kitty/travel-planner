@@ -32,7 +32,7 @@ class TravelPostSearchTest {
     post.setContent("海边"); post.setPhotos(photos); return post;
   }
 
-  @Test void ownerFilterAndCurrentDatabaseChecksPreserveRanking() {
+  @Test void sharedSearchReturnsOtherAuthorsAndPreservesRanking() {
     when(es.search(anyMap())).thenReturn(json.readTree("""
       {"hits":{"total":{"value":3},"hits":[
         {"_source":{"id":103}},{"_source":{"id":102}},{"_source":{"id":101}}]}}
@@ -41,15 +41,27 @@ class TravelPostSearchTest {
         post(101,1,"Completed","a.jpg,b.jpg"), post(102,2,"Completed",""),
         post(103,1,"Cancelled","[\"c.jpg\"]")));
     var result = service.search(1L," 海边 ",1,20);
-    assertEquals(List.of(103L,101L), result.items().stream().map(p -> p.id()).toList());
+    assertEquals(List.of(103L,102L,101L), result.items().stream().map(p -> p.id()).toList());
     assertEquals(List.of("c.jpg"), result.items().get(0).photos());
-    assertEquals(List.of("a.jpg","b.jpg"), result.items().get(1).photos());
+    assertEquals(List.of("a.jpg","b.jpg"), result.items().get(2).photos());
     verify(es).search(argThat(query -> {
       String body = json.writeValueAsString(query);
-      return body.contains("\"user_id\":1") && body.contains("\"content\":\"海边\"");
+      return !body.contains("user_id") && body.contains("\"content\":\"海边\"");
     }));
     String response = json.writeValueAsString(result);
     assertTrue(response.contains("trip_id")); assertFalse(response.contains("user_id"));
+  }
+
+  @Test void blankKeywordAlsoListsOtherAuthors() {
+    when(es.search(anyMap())).thenReturn(json.readTree("""
+      {"hits":{"total":{"value":1},"hits":[{"_source":{"id":102}}]}}
+      """));
+    when(posts.findAllById(any())).thenReturn(List.of(post(102,2,"Completed","")));
+    assertEquals(102L, service.search(1L," ",1,20).items().get(0).id());
+    verify(es).search(argThat(q -> {
+      String body = json.writeValueAsString(q);
+      return body.contains("match_all") && !body.contains("user_id");
+    }));
   }
 
   @Test void invalidParametersNeverReachEs() {
