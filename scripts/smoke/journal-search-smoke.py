@@ -1,6 +1,6 @@
 """Local smoke: real HTTP + MySQL fixtures + automatic ES worker.
-Backend must use travel_planner_test and an isolated ES index, not production.
-No direct ES writes or manual invocation of the indexing service are used.
+Uses the local development database by default; never targets production.
+No direct ES writes or manual indexing are used during the test flow.
 """
 import http.cookiejar
 import json
@@ -8,7 +8,7 @@ import os
 import subprocess
 import time
 import uuid
-from urllib.request import Request, build_opener, HTTPCookieProcessor
+from urllib.request import Request, build_opener, HTTPCookieProcessor, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 
@@ -16,9 +16,15 @@ BASE = os.environ.get('SMOKE_URL', 'http://localhost:8085')
 url = urlsplit(BASE)
 if url.scheme != 'http' or url.hostname != 'localhost' or not url.port:
     raise SystemExit('Only http://localhost:<port> is allowed')
-DB = 'travel_planner_test'
+DB = os.environ.get('SMOKE_DB_NAME', 'travel_planner')
+if DB not in ('travel_planner', 'travel_planner_test'):
+    raise SystemExit('SMOKE_DB_NAME must be travel_planner or travel_planner_test')
 CONTAINER = os.environ.get('SMOKE_MYSQL_CONTAINER', 'travel-planner-mysql-1')
 PASSWORD = os.environ.get('DB_PASSWORD', 'local-only-change-me')
+ES_INDEX = os.environ.get('SMOKE_ES_INDEX', 'travel-posts-java')
+if not ES_INDEX.replace('-', '').replace('_', '').isalnum():
+    raise SystemExit('SMOKE_ES_INDEX must be a local Elasticsearch index name')
+ES_URL = 'http://127.0.0.1:19200/' + ES_INDEX
 RUN = uuid.uuid4().hex
 USERS = []
 POSTS = []
@@ -75,8 +81,8 @@ def account():
     stored = sql(f"SELECT id FROM users WHERE email='{email}';")
     if stored != str(user):
         raise RuntimeError(
-            f'Backend at {BASE} is not connected to {DB}; restart the app on port 8085 '
-            f'with spring.datasource.url pointing to {DB}'
+            f'Backend at {BASE} is not connected to {DB}; check its spring.datasource.url '
+            f'or set SMOKE_DB_NAME to the matching local database'
         )
     USERS.append(int(user))
     status, body = client.request('POST', '/auth/login', credentials, auth=False)
@@ -167,7 +173,7 @@ def main():
 
 
 def cleanup():
-    # Remove only records created by this execution; retain real users and unrelated test rows.
+    # Remove only records created by this execution; retain real users and unrelated rows.
     if not USERS:
         return
     for user in USERS:
@@ -178,7 +184,18 @@ def cleanup():
           DELETE FROM auth_refresh_tokens WHERE session_id IN (SELECT id FROM auth_sessions WHERE user_id={user});
           DELETE FROM auth_sessions WHERE user_id={user};
           DELETE FROM users WHERE id={user};''')
-    print('CLEANUP test accounts, trips, posts and queue rows', flush=True)
+    # The worker has no deletion event for fixture SQL cleanup. Remove only our
+    # published post IDs from the local index after their database rows are gone.
+    for post_id in POSTS:
+        request = Request(ES_URL + '/_doc/' + str(post_id), method='DELETE')
+        try:
+            with urlopen(request, timeout=5) as response:
+                if response.status not in (200, 202):
+                    raise RuntimeError('ES fixture cleanup failed')
+        except HTTPError as error:
+            if error.code != 404:
+                raise RuntimeError('ES fixture cleanup failed') from error
+    print('CLEANUP smoke accounts, trips, posts, queue rows and ES documents', flush=True)
 
 
 if __name__ == '__main__':

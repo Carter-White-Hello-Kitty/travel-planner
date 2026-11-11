@@ -114,33 +114,19 @@ docker compose --profile journal up -d --wait
 
 可重复执行脚本 `scripts/smoke/journal-search-smoke.py` 使用 Python 标准库。它与其他可执行脚本一起位于 `scripts/smoke/`，由 `scripts/run-smokes.py` 的完整套件运行；CI 的 `--ci` 模式只运行无需外部配置的冒烟脚本，ES 由集成测试覆盖。
 
-先停止当前运行在 localhost:8085 的开发后端，再在同一个端口启动真实后端，数据库明确配置为 travel_planner_test（不加载 src/test/resources 的 test profile）；启用开发认证密钥、关闭安全 Cookie，保持邮件 worker 运行以支持完整冒烟套件，并启用搜索索引 worker、把同步间隔设为 2000ms。ES 索引必须是专用测试索引。MySQL/Redis/ES 分别需要 53306/56379/19200。
+使用 IDEA 或 `./mvnw spring-boot:run` 启动默认开发服务即可：端口 `8085`，数据库 `travel_planner`，ES 索引 `travel-posts-java`。Docker 的 MySQL、Redis、Mailpit 和 ES 需要运行，`.env` 中的 `JOURNAL_SEARCH_WORKER_ENABLED=true` 会启动自动索引。脚本会检查 HTTP 后端和本地 SQL 是否连到同一个库，只清理本次创建的记录与 ES 文档；若服务配置了其他本地 ES 索引，运行时设置相同的 `SMOKE_ES_INDEX`。集成测试仍独立使用 `travel_planner_test`。
 
-命令示例（本机 Docker Compose 默认测试密码，仅供本地）：
-
-```bash
-java -jar target/travel-planner-0.2.0-auth-SNAPSHOT.jar \
-  --spring.datasource.url='jdbc:mysql://localhost:53306/travel_planner_test?serverTimezone=UTC&characterEncoding=UTF-8' \
-  --spring.datasource.username=travel \
-  --spring.datasource.password=local-only-change-me \
-  --spring.data.redis.database=1 \
-  --auth.development-keys=true --auth.cookie-secure=false \
-  --journal.search.worker-enabled=true \
-  --journal.search.sync-delay-ms=2000 \
-  --journal.search.index=journal-http-smoke-local
-```
-
-另一个终端运行：
+运行：
 
 ```bash
 SMOKE_URL=http://localhost:8085 python3 scripts/smoke/journal-search-smoke.py
 ```
 
-验证了真实 HTTP 注册、登录、CSRF、搭档 POST 发布、后台自动索引、GET 搜索、照片 URL 返回、分页、无结果、用户隔离及 400/401/403/409。Completed 和 Cancelled 两次发布到搜索分别约 2.2s、2.1s；未手动触发索引方法。测试行程通过 SQL 准备，不测试 Google 行程生成或真实 S3 上传；测试加速至 2s，不能据此承诺默认 30s 周期下的延迟。
+验证真实 HTTP 注册、登录、CSRF、搭档 POST 发布、后台自动索引、GET 搜索、照片 URL 返回、分页、无结果、用户隔离及 400/401/403/409。测试行程通过 SQL 准备，不测试 Google 行程生成或真实 S3 上传；等待索引最长 60 秒。
 
 第一轮首次索引就绪时曾返回 503，后续 ES 正常、自动同步也已发生；未定位具体原因，不声称冷启动零错误。脚本会明确记录 503 并在 60 秒内重试，持续失败仍退出非零；第二轮通过。生产搜索 Java 代码未因此调整。建议后续补充 ES 就绪检查/初始化耗时诊断。
 
-脚本只清理本次账户及其帖子、行程和队列，临时 ES 索引需在停止专用后端后单独清理。本次执行的临时索引与后端均已清理，MySQL/Redis/已有 ES 服务保持运行。
+脚本只清理本次账户及其帖子、行程、队列和对应 ES 文档，不删除开发库的其他数据或整个索引。
 
 
 ## 2026-11-09 可见范围调整

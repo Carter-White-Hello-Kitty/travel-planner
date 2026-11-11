@@ -1,6 +1,6 @@
 """Run the wishlist flow over real HTTP, MySQL, and Google Places.
 
-Start the backend with its local test database and GOOGLE_PLACES_API_KEY, then run:
+Start the backend with its local development database and GOOGLE_PLACES_API_KEY, then run:
     SMOKE_URL=http://localhost:8085 python3 scripts/smoke/wishlist-smoke.py
 """
 
