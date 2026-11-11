@@ -1,9 +1,13 @@
 """Find real Google places, then generate a trip with required POIs on days 1 and 3.
 
-Run from the repository root: python3 scripts/live/required-poi-based-smoke.py
+Run from the repository root: python3 scripts/smoke/required-poi-based-smoke.py
 """
 
-from itinerary_smoke_common import START_DATE, SmokeClient, save_response
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from util.smoke_common import START_DATE, SmokeClient, save_response
 
 
 def main():

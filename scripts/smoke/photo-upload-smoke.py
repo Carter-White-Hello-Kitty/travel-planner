@@ -1,9 +1,9 @@
 """Upload a real PNG through the backend, download its returned URL, and save it locally.
 
 Run with the backend, Docker services, S3 credentials, and CloudFront configured:
-    SMOKE_URL=http://localhost:8085 python3 scripts/live/photo-upload-smoke.py
+    SMOKE_URL=http://localhost:18085 python3 scripts/smoke/photo-upload-smoke.py
 
-This manual smoke creates a test user and an S3 object. It is not run in CI.
+This smoke creates a test user and an S3 object. It is not run in CI.
 """
 
 import json
@@ -13,13 +13,15 @@ import urllib.error
 import urllib.request
 import uuid
 import zlib
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from itinerary_smoke_common import SmokeClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from util.smoke_common import SmokeClient
 
 
-OUTPUT = Path(__file__).resolve().parent / "photo-upload-result.png"
+OUTPUT = Path(__file__).resolve().parents[1] / "results" / "photo-upload-result.png"
 
 
 def png_chunk(kind, data):
@@ -102,6 +104,7 @@ def main():
     if returned != image:
         raise AssertionError("The downloaded image differs from the uploaded PNG")
 
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_bytes(returned)
     print("PASS: authenticated photo upload returned a readable image URL with identical PNG bytes")
     print(f"Image URL: {url}")

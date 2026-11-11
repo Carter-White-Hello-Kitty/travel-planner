@@ -1,6 +1,6 @@
 # Travel Journal 搜索（Sida）
 
-本模块是团队 Java/Spring 实现，Python 实验不属于正式运行依赖。代码在 `feature/journal-search`，尚未推送。
+本模块是团队 Java/Spring 实现，Python 实验不属于正式运行依赖。
 
 ## 运行与配置
 
@@ -85,9 +85,14 @@ worker 每轮扫描一页 MySQL 历史帖子（100 条）补队列，再处理�
 
 ## 验证命令
 
-2026-11-08：合入最新 `origin/test`（27b156a），适配 TripStatus 枚举与搭档发布事件。执行 `./mvnw -q clean verify -Djournal.es.integration=true`：137 项通过，0 失败/错误/跳过。新增验证通过真实 POST（JWT + CSRF）发布后，事件登记任务、写入真实 ES、GET 搜索返回新帖子及照片。测试期间 worker 关闭，由测试调用任务处理方法确定性验证；定时触发本身不属于该集成测试范围。
+完整测试默认包含真实 ES 集成测试。先启动 MySQL、Redis、Mailpit 和 ES，再运行普通 Maven 命令，无需额外测试开关：
 
-2026-11-01 已执行 `./mvnw -q clean verify -Djournal.es.integration=true`：32 项测试通过，0 失败/错误/跳过，包含原有 21 项测试和新增 11 项搜索相关测试。真实依赖为 MySQL 8.4、ES 9.5.5。使用本机 Java 24 编译，项目编译目标仍为 Java 17；未单独在 JDK 17 进程验证。真实集成使用 MockMvc 经过 Spring MVC 与认证过滤器，数据库与 ES 均为真实服务，不是启动外部 8085 服务的浏览器测试。
+```bash
+docker compose --profile journal up -d --wait
+./mvnw clean verify
+```
+
+CI 也使用相同的 Compose profile。集成测试使用 MockMvc、真实 MySQL 测试库和真实 ES；测试期间关闭索引 worker，由测试确定性地处理索引任务。定时 worker 的自动运行由下文的 HTTP 冒烟脚本验证。
 
 模块测试不依赖 MySQL 或真实 ES（HTTP 网关使用本机测试服务器）：
 
@@ -95,21 +100,21 @@ worker 每轮扫描一页 MySQL 历史帖子（100 条）补队列，再处理�
 ./mvnw -Dtest=TravelPostSearchTest,ElasticsearchGatewayTest test
 ```
 
-真实集成测试需要团队 Docker MySQL 测试库（53306）和 ES（19200）：
+只运行游记搜索集成测试时，也需要团队 Docker MySQL 测试库（53306）和 ES（19200）：
 
 ```bash
-docker compose up -d mysql mailpit
-./mvnw -Dtest=JournalSearchIntegrationTest -Djournal.es.integration=true test
+docker compose --profile journal up -d --wait
+./mvnw -Dtest=JournalSearchIntegrationTest test
 ```
 
-使用唯一 ES 临时索引和自己创建的数据库记录，完成后清理；仅允许 `travel_planner_test`。覆盖真实认证、中文搜索、分页、用户隔离、非终态排除、队列事务回滚与同步。默认不执行此可选测试，不增加其他同学日常测试对 ES 的依赖。
+测试使用唯一 ES 临时索引和自己创建的数据库记录，完成后清理；仅允许 `travel_planner_test`。覆盖真实认证、中文搜索、分页、跨用户可见性、非终态排除、队列事务回滚与同步。
 
 
-## 2026-11-08 实际 HTTP 冒烟验证
+## 实际 HTTP 冒烟验证
 
-新增可重复执行脚本 `scripts/manual/journal-search-smoke.py`（标准库，无需 pip）。该脚本不默认进入团队 CI，以免其他同学没有运行 ES worker 时失败。
+可重复执行脚本 `scripts/smoke/journal-search-smoke.py` 使用 Python 标准库。它与其他可执行脚本一起位于 `scripts/smoke/`，由 `scripts/run-smokes.py` 的完整套件运行；CI 的 `--ci` 模式只运行无需外部配置的冒烟脚本，ES 由集成测试覆盖。
 
-先启动真实后端，绑定 localhost:18085，数据库明确配置为 travel_planner_test（不加载 src/test/resources 的 test profile）；启用开发认证密钥、关闭安全 Cookie 和邮件 worker，设置 JOURNAL_SEARCH_WORKER_ENABLED=true、同步间隔 2000ms，ES 索引必须是专用测试索引。MySQL/Redis/ES 分别需要 53306/56379/19200。
+先启动真实后端，绑定 localhost:18085，数据库明确配置为 travel_planner_test（不加载 src/test/resources 的 test profile）；启用开发认证密钥、关闭安全 Cookie，保持邮件 worker 运行以支持完整冒烟套件，并启用搜索索引 worker、把同步间隔设为 2000ms。ES 索引必须是专用测试索引。MySQL/Redis/ES 分别需要 53306/56379/19200。
 
 命令示例（本机 Docker Compose 默认测试密码，仅供本地）：
 
@@ -119,15 +124,17 @@ java -jar target/travel-planner-0.2.0-auth-SNAPSHOT.jar \
   --spring.datasource.url='jdbc:mysql://localhost:53306/travel_planner_test?serverTimezone=UTC&characterEncoding=UTF-8' \
   --spring.datasource.username=travel \
   --spring.datasource.password=local-only-change-me \
-  --auth.development-keys=true --auth.cookie-secure=false --auth.worker-enabled=false \
-  --journal.search.worker-enabled=true --journal.search.sync-delay-ms=2000 \
+  --spring.data.redis.database=1 \
+  --auth.development-keys=true --auth.cookie-secure=false \
+  --journal.search.worker-enabled=true \
+  --journal.search.sync-delay-ms=2000 \
   --journal.search.index=journal-http-smoke-local
 ```
 
 另一个终端运行：
 
 ```bash
-python3 scripts/manual/journal-search-smoke.py
+SMOKE_URL=http://localhost:18085 python3 scripts/smoke/journal-search-smoke.py
 ```
 
 验证了真实 HTTP 注册、登录、CSRF、搭档 POST 发布、后台自动索引、GET 搜索、照片 URL 返回、分页、无结果、用户隔离及 400/401/403/409。Completed 和 Cancelled 两次发布到搜索分别约 2.2s、2.1s；未手动触发索引方法。测试行程通过 SQL 准备，不测试 Google 行程生成或真实 S3 上传；测试加速至 2s，不能据此承诺默认 30s 周期下的延迟。
@@ -144,4 +151,4 @@ python3 scripts/manual/journal-search-smoke.py
 上文 11 月 8 日的用户隔离测试为历史行为记录；当前验收改为用户 B 能搜到用户 A 发布的帖子，但不能替 A 的行程发布。私人草稿仍应在前端或独立存储中，不应写入当前 travel_posts 表。
 
 
-该调整已验证：`./mvnw -q clean verify -Djournal.es.integration=true` 共 138 项通过（0 失败/错误/跳过）。更新后的真实 HTTP 冒烟通过：用户 B 可以按关键词和空关键词列表查看用户 A 的帖子；替其他用户行程发布仍为 403，非终态发布仍为 409，未登录搜索仍为 401。Completed/Cancelled 发布后的自动同步分别约 1.4s/3.3s（测试周期 2s）。测试账号、行程、帖子及队列已清理，测试后端与专用 ES 索引已关闭/删除。未执行 commit 或 push。
+当前验收要求：用户 B 可以按关键词和空关键词列表查看用户 A 的帖子；替其他用户行程发布仍为 403，非终态发布仍为 409，未登录搜索仍为 401。

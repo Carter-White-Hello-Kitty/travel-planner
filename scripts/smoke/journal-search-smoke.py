@@ -1,4 +1,4 @@
-"""Opt-in local smoke: real HTTP + MySQL fixtures + automatic ES worker.
+"""Local smoke: real HTTP + MySQL fixtures + automatic ES worker.
 Backend must use travel_planner_test and an isolated ES index, not production.
 No direct ES writes or manual invocation of the indexing service are used.
 """

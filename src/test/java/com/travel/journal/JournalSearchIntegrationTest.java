@@ -8,7 +8,6 @@ import java.net.URI;
 import java.net.http.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -23,10 +22,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/** Opt-in: real test MySQL + local ES. Never clears unrelated database rows or indexes. */
+/** Real test MySQL + local ES. Never clears unrelated database rows or indexes. */
 @SpringBootTest(properties={"auth.worker-enabled=false", "journal.search.worker-enabled=false"})
 @AutoConfigureMockMvc
-@EnabledIfSystemProperty(named="journal.es.integration", matches="true")
 class JournalSearchIntegrationTest {
   static final String INDEX="journal-java-test-"+UUID.randomUUID();
   static final String ES=System.getProperty("journal.integration.es-url","http://127.0.0.1:19200");

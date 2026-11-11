@@ -1,12 +1,14 @@
 """Generate one real Google POI, then fetch the saved trip's full detail over HTTP.
 
-Run from the repository root with the development app and Docker services running:
-    SMOKE_URL=http://localhost:8085 python3 scripts/live/trip-detail-smoke.py
-
-This manual smoke creates a local user and trip. It never runs in CI.
+Run from the repository root with the test app and Docker services running:
+    SMOKE_URL=http://localhost:18085 python3 scripts/smoke/trip-detail-smoke.py
 """
 
-from itinerary_smoke_common import CITY_CENTER, START_DATE, SmokeClient, save_response
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from util.smoke_common import CITY_CENTER, START_DATE, SmokeClient, save_response
 
 
 def main():

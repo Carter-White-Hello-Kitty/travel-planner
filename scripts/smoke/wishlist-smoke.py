@@ -1,9 +1,7 @@
 """Run the wishlist flow over real HTTP, MySQL, and Google Places.
 
-Start the backend with its development database and GOOGLE_PLACES_API_KEY, then run:
-    SMOKE_URL=http://localhost:8085 python3 scripts/live/wishlist-smoke.py
-
-This manual test creates a local user. It is not part of CI.
+Start the backend with its local test database and GOOGLE_PLACES_API_KEY, then run:
+    SMOKE_URL=http://localhost:18085 python3 scripts/smoke/wishlist-smoke.py
 """
 
 import json
@@ -11,8 +9,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import sys
+from pathlib import Path
 
-from itinerary_smoke_common import SmokeClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from util.smoke_common import SmokeClient
 
 
 def delete_place(client, token, place_id):

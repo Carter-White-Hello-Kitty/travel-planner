@@ -11,6 +11,12 @@ services:
     mem_limit: 1g
     volumes:
       - journal-es:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
   mysql:
     image: mysql:8.4
     environment:
