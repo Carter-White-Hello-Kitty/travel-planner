@@ -54,8 +54,4 @@ secrets/
 application-local.yaml
 application-local.yml
 application-local.properties
-scripts/live/poi-search-result.json
-scripts/live/city-centralized.json
-scripts/live/required-poi-based.json
-scripts/live/trip-detail.json
-scripts/live/photo-upload-result.png
+scripts/results/

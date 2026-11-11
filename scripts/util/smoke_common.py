@@ -1,6 +1,6 @@
-"""Shared real-HTTP helpers for manual itinerary smoke tests.
+"""Shared real-HTTP helpers for smoke tests.
 
-The app must already be running with its development database and Google API key.
+The app must already be running with its local test database and Google API key.
 Only a local HTTP target is accepted because these tests create users and trips.
 """
 
@@ -159,6 +159,7 @@ class SmokeClient:
 
 
 def save_response(filename, response):
-    path = Path(__file__).resolve().parent / filename
+    path = Path(__file__).resolve().parents[1] / "results" / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
