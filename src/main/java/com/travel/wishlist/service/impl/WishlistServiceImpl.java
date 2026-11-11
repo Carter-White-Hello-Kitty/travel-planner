@@ -49,6 +49,11 @@ public class WishlistServiceImpl implements WishlistService {
     }
 
     @Override
+    public java.util.Set<String> ids(Long userId) {
+        return wishlist.findPlaceIdsByUserId(userId);
+    }
+
+    @Override
     public WishlistPageVO list(Long userId, int page, int pageSize, boolean ascending) {
         Sort.Direction direction = ascending ? Sort.Direction.ASC : Sort.Direction.DESC;
         Pageable pageable =
@@ -70,9 +75,9 @@ public class WishlistServiceImpl implements WishlistService {
     @Override
     @Transactional
     public WishlistAddedVO add(Long userId, String googlePlaceId) {
-        PoiVO poi = requiredPlace(googlePlaceId);
         if (wishlist.existsByUserIdAndGooglePlaceId(userId, googlePlaceId))
             throw alreadyExists(googlePlaceId);
+        PoiVO poi = requiredPlace(googlePlaceId);
 
         Wishlist item = new Wishlist();
         item.setUser(users.getReferenceById(userId));
@@ -117,7 +122,7 @@ public class WishlistServiceImpl implements WishlistService {
             if (poi == null || !googlePlaceId.equals(poi.googlePlaceId())) throw upstream();
             return poi;
         } catch (ApiError e) {
-            if (e.status == HttpStatus.BAD_REQUEST) throw notFound(googlePlaceId);
+            if (e.status == HttpStatus.NOT_FOUND) throw notFound(googlePlaceId);
             throw e;
         }
     }
@@ -130,7 +135,7 @@ public class WishlistServiceImpl implements WishlistService {
                 throw upstream();
         } catch (ApiError e) {
             // A place removed from Google must not break the whole wishlist page.
-            if (e.status == HttpStatus.BAD_REQUEST) details = null;
+            if (e.status == HttpStatus.NOT_FOUND) details = null;
             else throw e;
         }
         return new WishlistItemVO(

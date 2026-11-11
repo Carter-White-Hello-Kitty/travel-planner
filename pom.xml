@@ -16,6 +16,8 @@
 
     <properties>
         <java.version>17</java.version>
+        <!-- Test Elasticsearch must stay local; isolated validation overrides this local port. -->
+        <journal.integration.es-url>http://127.0.0.1:19200</journal.integration.es-url>
     </properties>
     <dependencies>
         <dependency>
@@ -75,6 +77,20 @@
 
     <build>
         <plugins>
+            <!-- Test-only fail-closed provider settings. Never inherit production credentials/targets. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-Dgoogle.places.api-key= -Dgoogle.maps.api-key= -Dtravel.photos.bucket= -Dtravel.photos.base-url=</argLine>
+                    <systemPropertyVariables>
+                        <auth.worker-enabled>false</auth.worker-enabled>
+                        <journal.search.worker-enabled>false</journal.search.worker-enabled>
+                        <journal.search.url>${journal.integration.es-url}</journal.search.url>
+                        <journal.integration.es-url>${journal.integration.es-url}</journal.integration.es-url>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

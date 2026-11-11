@@ -37,6 +37,9 @@ public class Trip {
     @Column(nullable = false, length = 255)
     private String name;
 
+    @Column(length = 255)
+    private String destination;
+
     @Column(nullable = false, length = 20)
     @Convert(converter = TripStatusConverter.class)
     private TripStatus status;

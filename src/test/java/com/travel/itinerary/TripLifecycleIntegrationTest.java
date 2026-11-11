@@ -53,8 +53,11 @@ class TripLifecycleIntegrationTest {
     @Autowired UserRepository userRepository;
     @Autowired TripRepository tripRepository;
     @Autowired TripService tripService;
+    @Autowired com.travel.itinerary.service.ManualTripService manualTrips;
     @Autowired StringRedisTemplate redis;
     @MockitoBean GooglePlacesClient google;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    com.travel.itinerary.repository.TripPoiRepository tripPois;
     final JsonMapper json = JsonMapper.builder().build();
 
     static final String PASSWORD = "TravelPlanner!2026",
@@ -407,6 +410,163 @@ class TripLifecycleIntegrationTest {
         assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips WHERE user_id = ?", Long.class, ownerId));
     }
 
+    @Test
+    void manualPlanPersistsDestinationOrderMovesAndDeletion() throws Exception {
+        stubPlaces();
+        var created = manual(null, ownerToken, List.of(List.of("place-a", "place-b"), List.of("place-c")));
+        assertEquals(201, created.getStatus(), created.getContentAsString());
+        long id = json.readTree(created.getContentAsString()).path("data").path("tripId").asLong();
+        var original = json.readTree(detail(id, ownerToken).getContentAsString()).path("data");
+        long stableId = original.path("tripDays").get(0).path("tripPois").get(1).path("tripPoiId").asLong();
+        assertEquals("New York", original.path("destination").asText());
+        assertEquals("2026-12-01", original.path("startDate").asText());
+        var updated = manual(id, ownerToken, List.of(List.of("place-c", "place-b"), List.of("place-a")));
+        assertEquals(200, updated.getStatus(), updated.getContentAsString());
+        var reloaded = json.readTree(detail(id, ownerToken).getContentAsString()).path("data");
+        var first = reloaded.path("tripDays").get(0).path("tripPois");
+        assertEquals("place-c", first.get(0).path("googlePlaceId").asText());
+        assertEquals(stableId, first.get(1).path("tripPoiId").asLong());
+        assertEquals(200, manual(id, ownerToken, List.of(List.of("place-b"))).getStatus());
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM trip_days WHERE trip_id = ?", Integer.class, id));
+        assertEquals(1, json.readTree(detail(id, ownerToken).getContentAsString())
+                .path("data").path("tripDays").get(0).path("tripPois").size());
+    }
+
+    @Test
+    void manualPlanAcceptsFifteenDaysRejectsSixteenAndDuplicates() throws Exception {
+        var fifteen = java.util.stream.IntStream.range(0, 15).mapToObj(i -> List.<String>of()).toList();
+        assertEquals(201, manual(null, ownerToken, fifteen).getStatus());
+        var sixteen = java.util.stream.IntStream.range(0, 16).mapToObj(i -> List.<String>of()).toList();
+        assertError(manual(null, ownerToken, sixteen), 400, "INVALID_REQUEST");
+        assertError(manual(null, ownerToken, List.of()), 400, "INVALID_REQUEST");
+        assertError(manual(null, ownerToken, List.of(List.of("place-a"), List.of("place-a"))), 400, "INVALID_REQUEST");
+    }
+
+    @Test
+    void manualPlanEnforcesOwnershipAuthenticationAndPlanningStatus() throws Exception {
+        Long id = trip(OWNER, TripStatus.PLANNING);
+        String other = registerAndLogin(OTHER);
+        assertError(manual(id, other, List.of(List.of())), 403, "FORBIDDEN");
+        assertError(manual(id, null, List.of(List.of())), 401, "AUTH_REQUIRED");
+        assertError(manual(999999L, ownerToken, List.of(List.of())), 404, "RESOURCE_NOT_FOUND");
+        Long ongoing = trip(OWNER, TripStatus.ONGOING);
+        assertError(manual(ongoing, ownerToken, List.of(List.of())), 409, "INVALID_TRIP_STATUS");
+        assertEquals("Hello New York", tripRepository.findById(id).orElseThrow().getName());
+    }
+
+    @Test
+    void failedPlaceValidationLeavesSavedPlanIntact() throws Exception {
+        stubPlaces();
+        var created = manual(null, ownerToken, List.of(List.of("place-a")));
+        long id = json.readTree(created.getContentAsString()).path("data").path("tripId").asLong();
+        when(google.details("invalid-place")).thenThrow(com.travel.common.ApiError.invalid("googlePlaceId", "Unavailable"));
+        assertError(manual(id, ownerToken, List.of(List.of("place-b", "invalid-place"))), 400, "INVALID_REQUEST");
+        var data = json.readTree(detail(id, ownerToken).getContentAsString()).path("data");
+        assertEquals("place-a", data.path("tripDays").get(0).path("tripPois").get(0).path("googlePlaceId").asText());
+    }
+
+    MockHttpServletResponse manual(Long id, String token, List<List<String>> days) throws Exception {
+        var request = id == null ? post("/trips/manual") : MockMvcRequestBuilders.put("/trips/" + id + "/plan");
+        request = withCsrf(request).contentType("application/json").content(json.writeValueAsString(
+                Map.of("name", "Manual plan", "destination", "New York", "startDate", "2026-12-01", "days", days)));
+        if (token != null) request.header("Authorization", "Bearer " + token);
+        return mvc.perform(request).andReturn().getResponse();
+    }
+
+    @Test
+    void invalidTripIdentifiersReturnClientErrorsRatherThanInternalErrors() throws Exception {
+        for (String id : List.of("not-a-number", "-1", "0", "9999999999999999999999999")) {
+            var response = mvc.perform(get("/trips/" + id)
+                    .header("Authorization", "Bearer " + ownerToken)).andReturn().getResponse();
+            assertError(response, 400, "INVALID_REQUEST");
+        }
+    }
+
+    @Test
+    void invalidCalendarDateAndNullDaysAreRejectedBeforePersistence() throws Exception {
+        for (String days : List.of("null", "[null]", "[]")) {
+            var response = mvc.perform(withCsrf(post("/trips/manual"))
+                    .header("Authorization", "Bearer " + ownerToken).contentType("application/json")
+                    .content("{\"name\":\"Invalid\",\"destination\":\"Philadelphia\",\"startDate\":\"2026-12-01\",\"days\":" + days + "}"))
+                    .andReturn().getResponse();
+            assertError(response, 400, "INVALID_REQUEST");
+        }
+        var response = mvc.perform(withCsrf(post("/trips/manual"))
+                .header("Authorization", "Bearer " + ownerToken).contentType("application/json")
+                .content("{\"name\":\"Invalid\",\"destination\":\"Philadelphia\",\"startDate\":\"2026-02-30\",\"days\":[[]]}"))
+                .andReturn().getResponse();
+        assertError(response, 400, "INVALID_REQUEST");
+    }
+
+    @Test
+    void manualSaveAndStartSerializeOnTheParentLock() throws Exception {
+        Long id = trip(OWNER, TripStatus.PLANNING);
+        var identity = new TokenService.Identity(userRepository.findByEmail(OWNER).orElseThrow().getId(), UUID.randomUUID());
+        var validating = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        stubPlaces();
+        var place = google.details("place-a");
+        when(google.details("place-a")).thenAnswer(invocation -> {
+            validating.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Validation wait timed out");
+            return place;
+        });
+        var plan = new com.travel.itinerary.vo.SaveTripRequest("Serialized save", "New York",
+                LocalDate.of(2026, 12, 1), List.of(List.of("place-a")));
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var save = pool.submit(() -> manualTrips.save(identity, id, plan));
+            assertTrue(validating.await(10, TimeUnit.SECONDS));
+            var start = pool.submit(() -> tripService.start(identity, id));
+            org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.TimeoutException.class,
+                    () -> start.get(150, TimeUnit.MILLISECONDS));
+            release.countDown();
+            assertEquals(id, save.get(10, TimeUnit.SECONDS));
+            start.get(10, TimeUnit.SECONDS);
+            assertEquals("Ongoing", statusOf(id));
+            assertEquals("Serialized save", tripRepository.findById(id).orElseThrow().getName());
+            org.junit.jupiter.api.Assertions.assertThrows(com.travel.common.ApiError.class,
+                    () -> manualTrips.save(identity, id, plan));
+        } finally {
+            release.countDown(); pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void manualSaveRejectsMissingCsrfAndAllNonPlanningStates() throws Exception {
+        Long planning = trip(OWNER, TripStatus.PLANNING);
+        var response = mvc.perform(MockMvcRequestBuilders.put("/trips/" + planning + "/plan")
+                .header("Authorization", "Bearer " + ownerToken).contentType("application/json")
+                .content("{\"name\":\"Plan\",\"destination\":\"New York\",\"startDate\":\"2026-12-01\",\"days\":[[]]}"))
+                .andReturn().getResponse();
+        assertError(response, 403, "CSRF_REJECTED");
+        for (TripStatus state : List.of(TripStatus.ONGOING, TripStatus.COMPLETED, TripStatus.CANCELLED)) {
+            Long id = trip(OWNER, state);
+            assertError(manual(id, ownerToken, List.of(List.of())), 409, "INVALID_TRIP_STATUS");
+            assertEquals(state.value(), statusOf(id));
+        }
+    }
+
+    @Test
+    void repositoryFailureRollsBackAlreadyFlushedMetadata() throws Exception {
+        stubPlaces();
+        var created = manual(null, ownerToken, List.of(List.of("place-a")));
+        assertEquals(201, created.getStatus());
+        Long id = json.readTree(created.getContentAsString()).path("data").path("tripId").asLong();
+        var identity = new TokenService.Identity(userRepository.findByEmail(OWNER).orElseThrow().getId(), UUID.randomUUID());
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException("Synthetic repository failure"))
+                .when(tripPois).save(org.mockito.ArgumentMatchers.argThat((TripPoi poi) -> "place-b".equals(poi.getGooglePlaceId())));
+        var updated = new com.travel.itinerary.vo.SaveTripRequest("Must roll back", "Philadelphia",
+                LocalDate.of(2027, 1, 1), List.of(List.of("place-b")));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> manualTrips.save(identity, id, updated));
+        var reloaded = json.readTree(detail(id, ownerToken).getContentAsString()).path("data");
+        assertEquals("Manual plan", reloaded.path("name").asText());
+        assertEquals("New York", reloaded.path("destination").asText());
+        assertEquals("2026-12-01", reloaded.path("startDate").asText());
+        assertEquals("place-a", reloaded.path("tripDays").get(0).path("tripPois").get(0).path("googlePlaceId").asText());
+    }
+
     // ---- helpers ----
 
     /** Saves a trip directly so lifecycle tests do not depend on Google Places. */
@@ -508,6 +668,7 @@ class TripLifecycleIntegrationTest {
         if (accessToken != null) request.header("Authorization", "Bearer " + accessToken);
         return mvc.perform(request).andReturn().getResponse();
     }
+
 
     String registerAndLogin(String email) throws Exception {
         Map<String, String> credentials = Map.of("email", email, "password", PASSWORD);

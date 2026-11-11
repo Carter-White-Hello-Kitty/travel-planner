@@ -7,7 +7,11 @@ import time
 import urllib.request
 import urllib.error
 import uuid
+import secrets
 base = os.environ.get("SMOKE_URL", "http://localhost:8085")
+mailpit = os.environ.get("MAILPIT_URL", "http://localhost:18025")
+if not re.fullmatch(r"http://localhost:\d+", mailpit):
+    raise SystemExit("MAILPIT_URL must point to local Mailpit")
 if not base.startswith("http://localhost:"):
     raise SystemExit("This smoke script is restricted to localhost")
 jar = http.cookiejar.CookieJar()
@@ -38,7 +42,8 @@ for attempt in range(40):
 else:
     raise SystemExit("Local backend did not become ready")
 email = "smoke-" + uuid.uuid4().hex + "@example.com"
-password = "LocalSmokePassword2026!"
+password = 'Qa!'+secrets.token_hex(24)
+new_password = 'Qa!'+secrets.token_hex(24)
 call("/auth/register", {"email": email, "password": password}, expected=201)
 login = call("/auth/login", {"email": email, "password": password})["data"]
 assert isinstance(login['user']['id'], int), 'Team user IDs must be numeric'
@@ -47,10 +52,10 @@ call("/auth/refresh", {})
 call("/auth/request-reset-pwd", {"email": email}, expected=202)
 reset_token = None
 for attempt in range(30):
-    listing = json.load(urllib.request.urlopen("http://localhost:18025/api/v1/messages"))
+    listing = json.load(urllib.request.urlopen(mailpit + "/api/v1/messages"))
     for message in listing["messages"]:
         if any(person.get("Address") == email for person in message.get("To", [])):
-            detail = json.load(urllib.request.urlopen("http://localhost:18025/api/v1/message/" + message["ID"]))
+            detail = json.load(urllib.request.urlopen(mailpit + "/api/v1/message/" + message["ID"]))
             match = re.search(r"#token=([A-Za-z0-9_-]{43})", detail.get("Text", ""))
             if match:
                 reset_token = match.group(1)
@@ -59,9 +64,9 @@ for attempt in range(30):
         break
     time.sleep(0.5)
 assert reset_token, "Reset email did not arrive in local Mailpit"
-call("/auth/reset-pwd", {"token": reset_token, "newPassword": "NewLocalSmokePassword2026!"})
+call("/auth/reset-pwd", {"token": reset_token, "newPassword": new_password})
 call("/auth/me", token=login["accessToken"], expected=401)
-new_login = call("/auth/login", {"email": email, "password": "NewLocalSmokePassword2026!"})["data"]
+new_login = call("/auth/login", {"email": email, "password": new_password})["data"]
 call("/auth/logout", {})
 call("/auth/me", token=new_login["accessToken"], expected=401)
 print("PASS: real HTTP, CSRF, registration, login, refresh, SMTP/Mailpit, reset, revocation, logout")

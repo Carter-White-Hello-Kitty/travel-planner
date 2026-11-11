@@ -10,7 +10,13 @@ public record GeneratedTrip(
         LocalDate startDate,
         String status,
         Integer dayCount,
-        List<Day> tripDays) {
+        List<Day> tripDays,
+        String destination) {
+
+    public GeneratedTrip(Long tripId, String name, LocalDate startDate, String status,
+            Integer dayCount, List<Day> tripDays) {
+        this(tripId, name, startDate, status, dayCount, tripDays, null);
+    }
 
     public record Day(Integer dayNumber, List<Poi> tripPois) {}
 

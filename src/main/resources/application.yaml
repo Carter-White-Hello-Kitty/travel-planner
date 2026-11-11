@@ -37,6 +37,8 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
 google:
+  maps:
+    api-key: ${GOOGLE_MAPS_API_KEY:${GOOGLE_PLACES_API_KEY:}}
   places:
     api-key: ${GOOGLE_PLACES_API_KEY:}
     connect-timeout: 2s

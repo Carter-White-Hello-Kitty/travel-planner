@@ -355,7 +355,7 @@ public class TripServiceImpl implements TripService {
             days.add(new SavedDay(day.getDayNumber(), pois));
         }
         return new SavedTrip(trip.getId(), trip.getName(), trip.getStartDate(),
-                trip.getStatus().value(), trip.getDayCount(), List.copyOf(days));
+                trip.getStatus().value(), trip.getDayCount(), List.copyOf(days), trip.getDestination());
     }
 
     private GeneratedTrip restoreDisplayFields(SavedTrip saved) {
@@ -374,7 +374,7 @@ public class TripServiceImpl implements TripService {
             days.add(new GeneratedTrip.Day(day.dayNumber(), List.copyOf(pois)));
         }
         return new GeneratedTrip(saved.id(), saved.name(), saved.startDate(), saved.status(),
-                saved.dayCount(), List.copyOf(days));
+                saved.dayCount(), List.copyOf(days), saved.destination());
     }
 
     private static void requireSameRequest(String storedHash, String requestHash) {
@@ -398,7 +398,7 @@ public class TripServiceImpl implements TripService {
     private record SavedPoi(Long id, String googlePlaceId, String status) {}
     private record SavedDay(Integer dayNumber, List<SavedPoi> pois) {}
     private record SavedTrip(Long id, String name, LocalDate startDate,
-            String status, Integer dayCount, List<SavedDay> days) {}
+            String status, Integer dayCount, List<SavedDay> days, String destination) {}
 
     @Override
     @Transactional(readOnly = true)
@@ -412,6 +412,7 @@ public class TripServiceImpl implements TripService {
 
     @Override
     public GeneratedTrip detail(TokenService.Identity identity, Long tripId) {
+        if (tripId == null || tripId < 1) throw ApiError.invalid("id", "Must be a positive trip ID");
         if (identity == null || identity.userId() == null)
             throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
         SavedTrip saved = readTransactions.execute(status -> {

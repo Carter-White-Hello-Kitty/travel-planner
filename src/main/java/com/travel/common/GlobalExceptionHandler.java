@@ -35,6 +35,12 @@ public class GlobalExceptionHandler {
     api.write(r, new ApiError(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Invalid JSON request"));
   }
 
+  @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+  public void parameter(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e,
+      HttpServletResponse r) throws java.io.IOException {
+    api.write(r, ApiError.invalid(e.getName(), "Invalid parameter type"));
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public void validation(MethodArgumentNotValidException e, HttpServletResponse r) throws java.io.IOException {
     var error = e.getBindingResult().getAllErrors().stream().findFirst();

@@ -1,0 +1,45 @@
+# Dedicated validation instances; never reuse the development Compose project.
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["127.0.0.1:19216:9200"]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: travel_planner
+      MYSQL_USER: travel
+      MYSQL_PASSWORD: ${VALIDATION_DB_PASSWORD:?Use scripts/validation/run-isolated.py}
+      MYSQL_ROOT_PASSWORD: ${VALIDATION_ROOT_PASSWORD:?Use scripts/validation/run-isolated.py}
+    ports: ["127.0.0.1:54316:3306"]
+    volumes:
+      - validation-mysql:/var/lib/mysql
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysqladmin ping -h 127.0.0.1 -u travel --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:57389:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:18135:8025", "127.0.0.1:11135:1025"]
+volumes:
+  validation-mysql:
