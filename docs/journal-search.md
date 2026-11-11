@@ -114,13 +114,12 @@ docker compose --profile journal up -d --wait
 
 可重复执行脚本 `scripts/smoke/journal-search-smoke.py` 使用 Python 标准库。它与其他可执行脚本一起位于 `scripts/smoke/`，由 `scripts/run-smokes.py` 的完整套件运行；CI 的 `--ci` 模式只运行无需外部配置的冒烟脚本，ES 由集成测试覆盖。
 
-先启动真实后端，绑定 localhost:18085，数据库明确配置为 travel_planner_test（不加载 src/test/resources 的 test profile）；启用开发认证密钥、关闭安全 Cookie，保持邮件 worker 运行以支持完整冒烟套件，并启用搜索索引 worker、把同步间隔设为 2000ms。ES 索引必须是专用测试索引。MySQL/Redis/ES 分别需要 53306/56379/19200。
+先停止当前运行在 localhost:8085 的开发后端，再在同一个端口启动真实后端，数据库明确配置为 travel_planner_test（不加载 src/test/resources 的 test profile）；启用开发认证密钥、关闭安全 Cookie，保持邮件 worker 运行以支持完整冒烟套件，并启用搜索索引 worker、把同步间隔设为 2000ms。ES 索引必须是专用测试索引。MySQL/Redis/ES 分别需要 53306/56379/19200。
 
 命令示例（本机 Docker Compose 默认测试密码，仅供本地）：
 
 ```bash
 java -jar target/travel-planner-0.2.0-auth-SNAPSHOT.jar \
-  --server.port=18085 \
   --spring.datasource.url='jdbc:mysql://localhost:53306/travel_planner_test?serverTimezone=UTC&characterEncoding=UTF-8' \
   --spring.datasource.username=travel \
   --spring.datasource.password=local-only-change-me \
@@ -134,7 +133,7 @@ java -jar target/travel-planner-0.2.0-auth-SNAPSHOT.jar \
 另一个终端运行：
 
 ```bash
-SMOKE_URL=http://localhost:18085 python3 scripts/smoke/journal-search-smoke.py
+SMOKE_URL=http://localhost:8085 python3 scripts/smoke/journal-search-smoke.py
 ```
 
 验证了真实 HTTP 注册、登录、CSRF、搭档 POST 发布、后台自动索引、GET 搜索、照片 URL 返回、分页、无结果、用户隔离及 400/401/403/409。Completed 和 Cancelled 两次发布到搜索分别约 2.2s、2.1s；未手动触发索引方法。测试行程通过 SQL 准备，不测试 Google 行程生成或真实 S3 上传；测试加速至 2s，不能据此承诺默认 30s 周期下的延迟。

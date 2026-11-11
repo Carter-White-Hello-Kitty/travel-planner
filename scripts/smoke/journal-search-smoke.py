@@ -12,7 +12,7 @@ from urllib.request import Request, build_opener, HTTPCookieProcessor
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 
-BASE = os.environ.get('SMOKE_URL', 'http://localhost:18085')
+BASE = os.environ.get('SMOKE_URL', 'http://localhost:8085')
 url = urlsplit(BASE)
 if url.scheme != 'http' or url.hostname != 'localhost' or not url.port:
     raise SystemExit('Only http://localhost:<port> is allowed')
@@ -74,7 +74,10 @@ def account():
     # Refuse fixture/cleanup operations if the HTTP app points at a different database.
     stored = sql(f"SELECT id FROM users WHERE email='{email}';")
     if stored != str(user):
-        raise RuntimeError('HTTP backend and fixture database do not match; refusing cleanup')
+        raise RuntimeError(
+            f'Backend at {BASE} is not connected to {DB}; restart the app on port 8085 '
+            f'with spring.datasource.url pointing to {DB}'
+        )
     USERS.append(int(user))
     status, body = client.request('POST', '/auth/login', credentials, auth=False)
     expect(status, body, 200)
@@ -165,6 +168,8 @@ def main():
 
 def cleanup():
     # Remove only records created by this execution; retain real users and unrelated test rows.
+    if not USERS:
+        return
     for user in USERS:
         sql(f'''DELETE j FROM journal_search_jobs j JOIN travel_posts p ON p.id=j.post_id
           JOIN trips t ON t.id=p.trip_id WHERE t.user_id={user};

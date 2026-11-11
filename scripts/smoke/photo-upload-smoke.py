@@ -1,7 +1,7 @@
 """Upload a real PNG through the backend, download its returned URL, and save it locally.
 
 Run with the backend, Docker services, S3 credentials, and CloudFront configured:
-    SMOKE_URL=http://localhost:18085 python3 scripts/smoke/photo-upload-smoke.py
+    SMOKE_URL=http://localhost:8085 python3 scripts/smoke/photo-upload-smoke.py
 
 This smoke creates a test user and an S3 object. It is not run in CI.
 """

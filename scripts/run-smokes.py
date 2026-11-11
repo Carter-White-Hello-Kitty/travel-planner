@@ -1,6 +1,7 @@
 """Run local HTTP smoke tests in scripts/smoke/.
 
-The default suite runs all scripts against a dedicated local test backend.
+The default suite runs all scripts against the local backend on port 8085,
+which must be started with the test database.
 --ci runs only credential-free tests. The backend and Mailpit must be running.
 """
 
@@ -43,6 +44,10 @@ def main() -> None:
         scripts = [script for script in scripts if script.name in CI_SCRIPTS]
         if len(scripts) != len(CI_SCRIPTS):
             raise SystemExit("One or more CI smoke scripts are missing")
+    else:
+        # The journal smoke verifies that HTTP and SQL use the same test DB.
+        # Run it before scripts that would otherwise write to the wrong DB.
+        scripts.sort(key=lambda script: (script.name != "journal-search-smoke.py", script.name))
 
     wait_for_backend()
     for script in scripts:

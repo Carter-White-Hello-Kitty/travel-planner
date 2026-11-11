@@ -85,12 +85,11 @@ docker compose --profile journal up -d --wait
 
 ### 2. 冒烟测试
 
-冒烟测试通过真实 HTTP 请求检查各模块的核心流程。完整套件会调用 Google Places、S3/CloudFront 和 Elasticsearch，并创建测试用户、行程及照片。先启动上面的 Docker 服务，再让 Java 服务连接独立测试库 `travel_planner_test`（会读取本地 `.env` 中的第三方配置）：
+冒烟测试通过真实 HTTP 请求检查各模块的核心流程。完整套件会调用 Google Places、S3/CloudFront 和 Elasticsearch，并创建测试用户、行程及照片。先停止当前运行在 `8085` 的开发后端，启动上面的 Docker 服务，再在同一个 `8085` 端口启动 Java 服务，明确指定它连接测试库 `travel_planner_test`（会读取本地 `.env` 中的第三方配置）：
 
 ```bash
-# 终端 1：启动专用测试后端，保持运行
+# 终端 1：启动连接测试库的后端，保持运行
 java -jar target/*.jar \
-  --server.port=18085 \
   --spring.datasource.url='jdbc:mysql://localhost:53306/travel_planner_test?serverTimezone=UTC&characterEncoding=UTF-8' \
   --spring.data.redis.database=1 \
   --auth.development-keys=true --auth.cookie-secure=false \
@@ -98,10 +97,10 @@ java -jar target/*.jar \
   --journal.search.worker-enabled=true --journal.search.sync-delay-ms=2000
 
 # 终端 2：运行所有冒烟脚本
-SMOKE_URL=http://localhost:18085 python3 scripts/run-smokes.py
+SMOKE_URL=http://localhost:8085 python3 scripts/run-smokes.py
 ```
 
-所有脚本通过时，统一入口会输出 `PASS`；任一脚本失败会返回非零退出码。运行前先用 `./mvnw -DskipTests package` 打包。测试连接本地测试库，涉及邮件的流程可在 Mailpit 的 `http://localhost:18025` 查看；Google/S3 调用需要有效配置，上传脚本会创建一个 S3 对象。生成的 JSON 和 PNG 放在 `scripts/results/`，该目录不提交到 Git。
+所有脚本通过时，统一入口会输出 `PASS`；任一脚本失败会返回非零退出码。运行前先用 `./mvnw -DskipTests package` 打包。`SMOKE_URL` 只指定 HTTP 地址；数据库由启动 Java 服务时的 `spring.datasource.url` 决定。测试连接本地测试库，涉及邮件的流程可在 Mailpit 的 `http://localhost:18025` 查看；Google/S3 调用需要有效配置，上传脚本会创建一个 S3 对象。生成的 JSON 和 PNG 放在 `scripts/results/`，该目录不提交到 Git。
 
 ### 3. 集成测试
 
@@ -115,7 +114,7 @@ MySQL、Redis 和 Elasticsearch 容器启动后直接运行，不需要先启动
 
 ### 4. 测试约定
 
-新模块的可执行冒烟脚本放在 `scripts/smoke/`，按 `<模块名>-smoke.py` 命名；共用但不可单独运行的 Python 工具放在 `scripts/util/`。脚本应独立运行，通过真实 HTTP 验证一条核心流程，失败时返回非零退出码；不要连接生产环境。`scripts/run-smokes.py` 默认按文件名顺序运行 `scripts/smoke/` 下的所有脚本。CI 使用同一入口的 `--ci` 模式，只运行 `scripts/run-smokes.py` 中列出的无需外部密钥的认证冒烟；以后新增符合条件的脚本时也需加入该列表。之后执行包括真实 ES 在内的集成测试。
+新模块的可执行冒烟脚本放在 `scripts/smoke/`，按 `<模块名>-smoke.py` 命名；共用但不可单独运行的 Python 工具放在 `scripts/util/`。脚本应独立运行，通过真实 HTTP 验证一条核心流程，失败时返回非零退出码；不要连接生产环境。`scripts/run-smokes.py` 默认先运行游记搜索脚本，核对 HTTP 后端与本地测试库是否一致，再按文件名顺序运行其余脚本。CI 使用同一入口的 `--ci` 模式，只运行 `scripts/run-smokes.py` 中列出的无需外部密钥的认证冒烟；以后新增符合条件的脚本时也需加入该列表。之后执行包括真实 ES 在内的集成测试。
 
 冒烟测试的第三方 Python 依赖统一写在根目录的 `requirements-smoke.txt`，并固定版本；当前脚本只用标准库，所以文件暂时没有包。新增依赖时，把依赖声明和使用它的冒烟脚本放在同一个 PR。CI 会先安装该文件中的依赖，再运行冒烟测试。本地需要这些依赖时，在项目根目录创建独立环境并安装：
 
