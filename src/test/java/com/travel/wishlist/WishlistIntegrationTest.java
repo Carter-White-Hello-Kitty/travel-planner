@@ -100,6 +100,23 @@ class WishlistIntegrationTest {
     }
 
     @Test
+    void membershipIdsAreScopedAndDoNotLoadGoogleDetails() throws Exception {
+        assertEquals(201, addCall("place-member", token).getStatus());
+        String other = registerAndLogin(OTHER_EMAIL);
+        org.mockito.Mockito.clearInvocations(google);
+        var own = mvc.perform(get("/wishlist/ids").header("Authorization", "Bearer " + token))
+                .andReturn().getResponse();
+        assertEquals(200, own.getStatus());
+        assertEquals("place-member", json.readTree(own.getContentAsString()).path("data").get(0).asText());
+        var foreign = mvc.perform(get("/wishlist/ids").header("Authorization", "Bearer " + other))
+                .andReturn().getResponse();
+        assertEquals(200, foreign.getStatus());
+        assertEquals(0, json.readTree(foreign.getContentAsString()).path("data").size());
+        assertEquals(401, mvc.perform(get("/wishlist/ids")).andReturn().getResponse().getStatus());
+        org.mockito.Mockito.verifyNoInteractions(google);
+    }
+
+    @Test
     void cleanupPreservesAnotherUsersWishlist() {
         String email = "unrelated-wishlist-" + UUID.randomUUID() + "@example.com";
         db.update("INSERT INTO users (email, password_hash) VALUES (?, ?)", email, "unused");
@@ -163,9 +180,17 @@ class WishlistIntegrationTest {
     @Test
     void addingUnknownPlaceIsNotFound() throws Exception {
         when(google.details("missing-place"))
-                .thenThrow(ApiError.invalid("googlePlaceId", "Google Place ID not found"));
+                .thenThrow(new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Place not found"));
 
         assertError(addCall("missing-place", token), 404, "RESOURCE_NOT_FOUND");
+        assertEquals(0, count());
+    }
+
+    @Test
+    void invalidPlaceStaysBadRequestAndDoesNotPersist() throws Exception {
+        when(google.details("invalid-place"))
+                .thenThrow(ApiError.invalid("googlePlaceId", "Invalid Google Place ID"));
+        assertError(addCall("invalid-place", token), 400, "INVALID_REQUEST");
         assertEquals(0, count());
     }
 
@@ -201,7 +226,7 @@ class WishlistIntegrationTest {
                 "INSERT INTO wishlist (user_id, google_place_id, created_at) VALUES (?, ?, ?)",
                 userId, "gone-place", LocalDateTime.now());
         when(google.details("gone-place"))
-                .thenThrow(ApiError.invalid("googlePlaceId", "Google Place ID not found"));
+                .thenThrow(new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Place not found"));
 
         MockHttpServletResponse r = listCall("", token);
         assertEquals(200, r.getStatus());
@@ -320,6 +345,7 @@ class WishlistIntegrationTest {
         if (accessToken != null) request.header("Authorization", "Bearer " + accessToken);
         return mvc.perform(request).andReturn().getResponse();
     }
+
 
     String registerAndLogin(String email) throws Exception {
         Map<String, String> credentials = Map.of("email", email, "password", PASSWORD);

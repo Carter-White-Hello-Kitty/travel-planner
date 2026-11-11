@@ -8,6 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
 
+    @org.springframework.data.jpa.repository.Query("select w.googlePlaceId from Wishlist w where w.user.id = :userId")
+    java.util.Set<String> findPlaceIdsByUserId(@org.springframework.data.repository.query.Param("userId") Long userId);
+
     Page<Wishlist> findByUserId(Long userId, Pageable pageable);
 
     boolean existsByUserIdAndGooglePlaceId(Long userId, String googlePlaceId);

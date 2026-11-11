@@ -41,9 +41,10 @@ class PoiSearchControllerTest {
   @EnableWebMvc
   @EnableWebSecurity
   @Import({AuthConfig.class, AuthController.class, ApiSupport.class, GlobalExceptionHandler.class,
-      PoiSearchController.class, PoiSearchServiceImpl.class})
+      PoiSearchController.class, PoiSearchServiceImpl.class, com.travel.poisearch.controller.PoiDisplayController.class})
   static class Config {
     @Bean AuthService auth() { return mock(AuthService.class); }
+    @Bean com.travel.poisearch.client.GoogleMapClient maps() { return mock(com.travel.poisearch.client.GoogleMapClient.class); }
     @Bean RateLimiter limits() { return mock(RateLimiter.class); }
     @Bean GooglePlacesClient google() { return mock(GooglePlacesClient.class); }
   }
@@ -120,4 +121,30 @@ class PoiSearchControllerTest {
     mvc.perform(search(BODY)).andExpect(status().isGatewayTimeout())
         .andExpect(jsonPath("$.error.code").value("POI_SEARCH_TIMEOUT"));
   }
+  @Test
+  void displayAndMapRoutesKeepAuthCsrfAndViewportValidation() throws Exception {
+    mvc.perform(get("/pois/place-id")).andExpect(status().isUnauthorized());
+    mvc.perform(post("/pois/map").header("Authorization", "Bearer test-access")
+        .contentType("application/json").content("{\"latitude\":0,\"longitude\":0,\"zoom\":12}"))
+        .andExpect(status().isForbidden());
+    mvc.perform(post("/pois/map").header("Authorization", "Bearer test-access")
+        .cookie(new Cookie("XSRF-TOKEN", csrf)).header("X-XSRF-TOKEN", csrf)
+        .contentType("application/json").content("{\"latitude\":90,\"longitude\":0,\"zoom\":99}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void photoRouteRequiresAuthenticationCsrfAndValidResource() throws Exception {
+    mvc.perform(post("/pois/photo").contentType("application/json").content("{}"))
+        .andExpect(status().isUnauthorized());
+    mvc.perform(post("/pois/photo").header("Authorization", "Bearer test-access")
+        .contentType("application/json").content("{}"))
+        .andExpect(status().isForbidden());
+    when(google.photoUrl("../invalid")).thenThrow(com.travel.common.ApiError.invalid("name", "Invalid resource"));
+    mvc.perform(post("/pois/photo").header("Authorization", "Bearer test-access")
+        .cookie(new Cookie("XSRF-TOKEN", csrf)).header("X-XSRF-TOKEN", csrf)
+        .contentType("application/json").content("{\"name\":\"../invalid\"}"))
+        .andExpect(status().isBadRequest());
+  }
+
 }

@@ -19,7 +19,7 @@ import java.util.Set;
 public record GenerateTripRequest(
         @NotBlank @Size(max = 255) String name,
         @NotNull LocalDate startDate,
-        @NotNull @Min(1) @Max(14) Integer dayCount,
+        @NotNull @Min(1) @Max(15) Integer dayCount,
         @Valid SearchArea searchArea,
         @NotNull @Valid Constraints constraints,
         List<@NotNull @Valid Day> tripDays) {

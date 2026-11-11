@@ -59,3 +59,5 @@ scripts/live/city-centralized.json
 scripts/live/required-poi-based.json
 scripts/live/trip-detail.json
 scripts/live/photo-upload-result.png
+# Local isolated validation artifacts (never commit logs or generated credentials)
+.validation/

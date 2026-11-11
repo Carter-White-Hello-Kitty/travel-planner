@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS trips
     name      VARCHAR(255) NOT NULL,
     status    VARCHAR(20) NOT NULL,
     day_count INTEGER     NOT NULL,
+    destination VARCHAR(255) NULL,
     start_date DATE NULL
 );
 
@@ -122,3 +123,12 @@ CREATE TABLE IF NOT EXISTS auth_worker_lock
 );
 
 INSERT IGNORE INTO auth_worker_lock (id) VALUES (1);
+
+-- Additive, repeatable upgrade for installations created before destination support.
+SET @destination_ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trips' AND COLUMN_NAME = 'destination') = 0,
+    'ALTER TABLE trips ADD COLUMN destination VARCHAR(255) NULL', 'SELECT 1');
+PREPARE destination_upgrade FROM @destination_ddl;
+EXECUTE destination_upgrade;
+DEALLOCATE PREPARE destination_upgrade;

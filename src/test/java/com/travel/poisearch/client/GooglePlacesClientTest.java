@@ -42,6 +42,7 @@ class GooglePlacesClientTest {
     server.createContext("/places/", exchange -> {
       fieldMask = exchange.getRequestHeaders().getFirst("X-Goog-FieldMask");
       key = exchange.getRequestHeaders().getFirst("X-Goog-Api-Key");
+      try { Thread.sleep(delay); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
       byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
       exchange.sendResponseHeaders(status, bytes.length);
       exchange.getResponseBody().write(bytes);
@@ -58,6 +59,15 @@ class GooglePlacesClientTest {
 
   @AfterEach
   void cleanup() { server.stop(0); }
+
+  @Test
+  void detailAndPhotoTimeoutsRemainGatewayTimeouts() {
+    delay = 150;
+    var fast = client("unit-test-only", Duration.ofMillis(25));
+    assertEquals(504, assertThrows(ApiError.class, () -> fast.details("place-id")).status.value());
+    assertEquals(504, assertThrows(ApiError.class, () -> fast.displayDetails("place-id")).status.value());
+    assertEquals(504, assertThrows(ApiError.class, () -> fast.photoUrl("places/place-id/photos/photo-id")).status.value());
+  }
 
   @Test
   void sendsNewApiRequestAndMapsFieldsWithoutDatabaseId() {
@@ -154,7 +164,56 @@ class GooglePlacesClientTest {
         + "userRatingCount,businessStatus", fieldMask);
     assertEquals("fake-test-key", key);
     status = 404;
-    assertEquals("INVALID_REQUEST", assertThrows(ApiError.class,
+    assertEquals("RESOURCE_NOT_FOUND", assertThrows(ApiError.class,
         () -> client.details("missing-id")).code);
   }
+  @Test
+  void extendedDetailsDecodePhotoAttributionsAndOptionalFields() {
+    body = """
+        {"id":"google-id","displayName":{"text":"Museum"},
+         "location":{"latitude":39.33,"longitude":-76.62},
+         "photos":[{"name":"places/google-id/photos/photo-ref","authorAttributions":[
+           {"displayName":"Photographer","uri":"https://maps.google.com/contributor"}]}],
+         "websiteUri":"https://example.com","nationalPhoneNumber":"123",
+         "regularOpeningHours":{"weekdayDescriptions":["Monday: 9–5"]}}
+        """;
+    var details = client.displayDetails("google-id");
+    assertEquals("Photographer", details.photos().get(0).authors().get(0).name());
+    assertEquals(List.of("Monday: 9–5"), details.openingHours());
+    assertTrue(fieldMask.contains("photos"));
+    assertEquals("fake-test-key", key);
+    body = "{\"id\":\"google-id\",\"location\":{\"latitude\":0,\"longitude\":0}}";
+    assertTrue(client.displayDetails("google-id").photos().isEmpty());
+  }
+
+  @Test
+  void photoMediaNeverReturnsCredentialUrlOrArbitraryHost() {
+    body = "{\"photoUri\":\"https://lh3.googleusercontent.com/photo\"}";
+    assertEquals("https://lh3.googleusercontent.com/photo", client.photoUrl("places/google-id/photos/photo-ref"));
+    for (String uri : List.of("http://lh3.googleusercontent.com/photo", "https://evil.example/photo",
+        "https://googleusercontent.com.evil.example/photo")) {
+      body = "{\"photoUri\":\"" + uri + "\"}";
+      assertEquals(502, assertThrows(ApiError.class, () -> client.photoUrl("places/google-id/photos/photo-ref")).status.value());
+    }
+    assertEquals(400, assertThrows(ApiError.class, () -> client.photoUrl("../auth/secrets")).status.value());
+    assertEquals(400, assertThrows(ApiError.class, () -> client.displayDetails("../secret")).status.value());
+  }
+
+  @Test
+  void resourceFailuresDistinguishInvalidMissingAndProviderErrorsWithoutLeakingBodies() {
+    body = "{\"error\":{\"message\":\"secret fake-test-key upstream body\"}}";
+    for (int code : new int[] {400, 404, 403, 429, 500}) {
+      status = code;
+      for (java.util.function.Supplier<?> operation : List.<java.util.function.Supplier<?>>of(
+          () -> client.details("place-id"), () -> client.displayDetails("place-id"),
+          () -> client.photoUrl("places/place-id/photos/photo-id"))) {
+        ApiError error = assertThrows(ApiError.class, operation::get);
+        assertEquals(code == 400 ? 400 : code == 404 ? 404 : 502, error.status.value());
+        assertEquals(code == 400 ? "INVALID_REQUEST" : code == 404 ? "RESOURCE_NOT_FOUND" : "POI_SEARCH_UPSTREAM_ERROR", error.code);
+        assertFalse(error.getMessage().contains("fake-test-key"));
+        assertFalse(error.getMessage().contains("upstream body"));
+      }
+    }
+  }
+
 }
