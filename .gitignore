@@ -61,3 +61,4 @@ scripts/live/trip-detail.json
 scripts/live/photo-upload-result.png
 # Local isolated validation artifacts (never commit logs or generated credentials)
 .validation/
+scripts/results/

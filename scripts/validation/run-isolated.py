@@ -31,6 +31,11 @@ env.update(VALIDATION_DB_PASSWORD=secrets.token_hex(24), VALIDATION_ROOT_PASSWOR
            SMOKE_URL='http://localhost:8087', MAILPIT_URL='http://localhost:18135', SMOKE_ALLOW_WRITES='1')
 env['DB_PASSWORD'] = env['VALIDATION_DB_PASSWORD']
 env['SPRING_DATASOURCE_URL'] = 'jdbc:mysql://localhost:54316/travel_planner_test?serverTimezone=UTC&characterEncoding=UTF-8'
+env['SPRING_CONFIG_IMPORT'] = 'optional:classpath:/validation-only.properties'
+env.update(JOURNAL_ES_URL='http://127.0.0.1:19216', JOURNAL_ES_INDEX='validation-'+uuid.uuid4().hex[:10],
+           JOURNAL_SEARCH_WORKER_ENABLED='false', JOURNAL_SEARCH_SYNC_DELAY_MS='500')
+env['VALIDATION_COMPOSE_PROJECT'] = project
+env['VALIDATION_COMPOSE_FILE'] = str(root / 'compose.validation.yaml')
 compose = ['docker', 'compose', '-p', project, '-f', 'compose.validation.yaml']
 summary = {'project': project, 'checks': [], 'real_google': 'not executed; no keys supplied',
            'maps_real': 'pending API enablement', 'containers': 'stopped in finally; isolated volume retained'}
@@ -60,11 +65,13 @@ try:
         "\nSELECT COUNT(*) FROM trips WHERE name='Keep existing trip' AND destination IS NULL;\n"
         "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='trips' AND COLUMN_NAME='destination';\n")
     assert (out / 'schema-legacy.log').read_text().splitlines()[-2:] == ['1', '1'], 'Legacy rows or column not preserved'
-    run('maven-clean-verify', ['./mvnw', '--batch-mode', 'clean', 'verify'])
+    run('maven-clean-verify', ['./mvnw', '--batch-mode', 'clean', 'verify',
+                               '-Djournal.integration.es-url=http://127.0.0.1:19216'])
     suites = [ET.parse(p).getroot() for p in (root / 'target/surefire-reports').glob('TEST-*.xml')]
     summary['maven'] = {key: sum(int(s.get(key, 0)) for s in suites) for key in ['tests', 'failures', 'errors', 'skipped']}
     jars = [p for p in (root / 'target').glob('*.jar')]
     assert len(jars) == 1
+    env['JOURNAL_SEARCH_WORKER_ENABLED'] = 'true'
     server_log = (out / 'http-server.log').open('w')
     app = subprocess.Popen(['java', '-jar', str(jars[0]), '--server.port=8087'], env=env,
                            stdout=server_log, stderr=subprocess.STDOUT)
@@ -79,8 +86,9 @@ try:
             time.sleep(0.5)
     else:
         raise RuntimeError('Isolated HTTP server not ready')
-    run('auth-http-smoke', [sys.executable, 'scripts/run-smokes.py'])
+    run('auth-http-smoke', [sys.executable, 'scripts/run-smokes.py', '--ci'])
     run('manual-http-smoke', [sys.executable, 'scripts/live/manual-plan-smoke.py'])
+    run('journal-http-regression', [sys.executable, 'scripts/validation/local-http-regression.py'])
 except Exception as error:
     summary['error_type'] = type(error).__name__
     print('Validation incomplete; inspect .validation/ locally. No credentials printed.', flush=True)

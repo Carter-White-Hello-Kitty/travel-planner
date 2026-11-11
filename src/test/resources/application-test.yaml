@@ -12,3 +12,6 @@ auth:
   development-keys: true
   cookie-secure: false
   worker-enabled: false
+journal:
+  search:
+    worker-enabled: false

@@ -34,8 +34,8 @@ jobs:
       - name: Install smoke test dependencies
         run: python -m pip install -r requirements-smoke.txt
 
-      - name: Start MySQL, Redis and Mailpit
-        run: docker compose up -d --wait
+      - name: Start MySQL, Redis, Mailpit and Elasticsearch
+        run: docker compose --profile journal up -d --wait
 
       - name: Package application
         run: ./mvnw --batch-mode -DskipTests package
@@ -48,7 +48,7 @@ jobs:
           app_pid=$!
           trap 'kill "$app_pid" 2>/dev/null || true' EXIT
 
-          if ! python scripts/run-smokes.py; then
+          if ! python scripts/run-smokes.py --ci; then
             cat backend.log
             exit 1
           fi
