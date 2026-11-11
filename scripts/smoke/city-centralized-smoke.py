@@ -1,9 +1,13 @@
 """Generate a three-day Manhattan trip with no required POIs using real Google Places.
 
-Run from the repository root: python3 scripts/live/city-centralized-smoke.py
+Run from the repository root: python3 scripts/smoke/city-centralized-smoke.py
 """
 
-from itinerary_smoke_common import CITY_CENTER, START_DATE, SmokeClient, save_response
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from util.smoke_common import CITY_CENTER, START_DATE, SmokeClient, save_response
 
 
 def main():

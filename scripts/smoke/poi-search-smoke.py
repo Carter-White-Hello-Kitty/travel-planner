@@ -1,6 +1,6 @@
-"""Manually smoke test POI search against the running app and real Google Places.
+"""Smoke test POI search against the running app and real Google Places.
 
-Run from the repository root: python3 scripts/live/poi-search-smoke.py
+Run from the repository root: python3 scripts/smoke/poi-search-smoke.py
 This script creates one local test account and makes one Google Places request.
 """
 
@@ -22,7 +22,7 @@ if url.scheme != "http" or url.hostname != "localhost" or not url.port or url.pa
 client = urllib.request.build_opener(
     urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
 )
-output_path = Path(__file__).resolve().parent / "poi-search-result.json"
+output_path = Path(__file__).resolve().parents[1] / "results" / "poi-search-result.json"
 
 
 def call(path, body=None, access_token=None, csrf_token=None, expected=200):
@@ -95,6 +95,7 @@ def main():
             not isinstance(poi["userRatingCount"], int) or poi["userRatingCount"] < 0
         ):
             raise AssertionError("POI userRatingCount must be a nonnegative integer or null")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"PASS: authenticated /pois/search returned {len(pois)} Google places with agreed fields")
     print(f"Saved response: {output_path}")

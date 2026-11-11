@@ -1,4 +1,22 @@
 services:
+  # Sida Xue — Travel Journal Search：本地开发用 ES 容器。
+  elasticsearch:
+    profiles: [journal]
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["127.0.0.1:19200:9200"]
+    mem_limit: 1g
+    volumes:
+      - journal-es:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
   mysql:
     image: mysql:8.4
     environment:
@@ -27,4 +45,6 @@ services:
       timeout: 3s
       retries: 40
 volumes:
+  # Sida Xue — Travel Journal Search：ES 数据持久化卷。
+  journal-es:
   mysql-data:
