@@ -138,11 +138,11 @@ class TripGenerationIdempotencyIntegrationTest {
         GenerateTripRequest firstBody = request("First plan");
         GeneratedTrip first = generate(identity(), firstId, firstBody).trip();
         assertEquals(draftId, first.tripId());
-        assertEquals(1L, first.revision());
+        assertEquals(100L, first.editTimestamp());
         var saved = service.save(identity(), draftId,
-                new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 1L,
+                new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 200L,
                         List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
-        assertEquals(2L, saved.revision());
+        assertEquals(200L, saved.editTimestamp());
         ApiError stale = assertThrows(ApiError.class,
                 () -> generate(identity(), firstId, firstBody));
         assertEquals("STALE_GENERATION", stale.code);
@@ -151,10 +151,10 @@ class TripGenerationIdempotencyIntegrationTest {
         GenerateTripRequest secondBody = new GenerateTripRequest("Second plan",
                 LocalDate.of(2026, 12, 1), 1,
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000),
-                new GenerateTripRequest.Constraints(2, List.of()), null, 2L);
+                new GenerateTripRequest.Constraints(2, List.of()), null, 300L);
         GeneratedTrip second = generate(identity(), secondId, secondBody).trip();
         assertEquals(first.tripId(), second.tripId());
-        assertEquals(3L, second.revision());
+        assertEquals(300L, second.editTimestamp());
         assertEquals(1L, tripCount());
         assertEquals(2L, requestCount());
 
@@ -321,9 +321,9 @@ class TripGenerationIdempotencyIntegrationTest {
         try {
             assertTrue(searchStarted.await(10, TimeUnit.SECONDS));
             var saved = service.save(identity(), draftId,
-                    new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 0L,
+                    new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 200L,
                             List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
-            assertEquals(1L, saved.revision());
+            assertEquals(200L, saved.editTimestamp());
         } finally {
             finishSearch.countDown();
             worker.shutdown();
@@ -332,18 +332,57 @@ class TripGenerationIdempotencyIntegrationTest {
         ExecutionException failure = assertThrows(ExecutionException.class,
                 () -> generation.get(10, TimeUnit.SECONDS));
         assertTrue(failure.getCause() instanceof ApiError);
-        assertEquals("STALE_TRIP_REVISION", ((ApiError) failure.getCause()).code);
+        assertEquals("STALE_TRIP_EDIT", ((ApiError) failure.getCause()).code);
         assertEquals("Manual edit", db.queryForObject("SELECT name FROM trips WHERE id = ?",
                 String.class, draftId));
-        assertEquals(1L, db.queryForObject("SELECT revision FROM trips WHERE id = ?",
+        assertEquals(200L, db.queryForObject("SELECT edit_timestamp FROM trips WHERE id = ?",
                 Long.class, draftId));
         assertEquals(0L, requestCount());
         assertEquals(Boolean.FALSE, redis.hasKey(key(requestId)));
 
         ApiError earlyConflict = assertThrows(ApiError.class,
                 () -> generate(identity(), requestId(), body));
-        assertEquals("STALE_TRIP_REVISION", earlyConflict.code);
+        assertEquals("STALE_TRIP_EDIT", earlyConflict.code);
         verify(search, times(1)).search(any());
+    }
+
+    @Test
+    void newerGenerationWinsAfterOlderManualSaveCommitsDuringSearch() throws Exception {
+        PoiVO place = place();
+        CountDownLatch searchStarted = new CountDownLatch(1);
+        CountDownLatch finishSearch = new CountDownLatch(1);
+        when(search.search(any())).thenAnswer(invocation -> {
+            searchStarted.countDown();
+            if (!finishSearch.await(10, TimeUnit.SECONDS))
+                throw new IllegalStateException("Timed out waiting to finish mocked Google search");
+            return List.of(place);
+        });
+        GenerateTripRequest base = request("Generated latest plan");
+        GenerateTripRequest newer = new GenerateTripRequest(base.name(), base.startDate(),
+                base.dayCount(), base.searchArea(), base.constraints(), base.tripDays(), 200L);
+        String requestId = requestId();
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        Future<TripService.GenerationOutcome> generation = worker.submit(
+                () -> generate(identity(), requestId, newer));
+        try {
+            assertTrue(searchStarted.await(10, TimeUnit.SECONDS));
+            var older = service.save(identity(), draftId,
+                    new SaveTripRequest("Older manual edit", LocalDate.of(2026, 12, 1), 100L,
+                            List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
+            assertEquals(100L, older.editTimestamp());
+        } finally {
+            finishSearch.countDown();
+            worker.shutdown();
+        }
+
+        GeneratedTrip result = generation.get(10, TimeUnit.SECONDS).trip();
+        assertEquals(200L, result.editTimestamp());
+        assertEquals("Generated latest plan", result.name());
+        assertEquals("Generated latest plan", db.queryForObject("SELECT name FROM trips WHERE id = ?",
+                String.class, draftId));
+        assertEquals(200L, db.queryForObject("SELECT edit_timestamp FROM trips WHERE id = ?",
+                Long.class, draftId));
+        assertEquals(1L, requestCount());
     }
 
     @Test
@@ -559,7 +598,7 @@ class TripGenerationIdempotencyIntegrationTest {
     private static GenerateTripRequest request(String name) {
         return new GenerateTripRequest(name, LocalDate.of(2026, 12, 1), 1,
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000),
-                new GenerateTripRequest.Constraints(2, List.of()), null, 0L);
+                new GenerateTripRequest.Constraints(2, List.of()), null, 100L);
     }
 
     private static PoiVO place() {

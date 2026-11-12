@@ -15,7 +15,7 @@ import java.util.Set;
 public record SaveTripRequest(
         @NotBlank @Size(max = 255) String name,
         LocalDate startDate,
-        @Min(0) Long revision,
+        @Min(1) Long editTimestamp,
         @NotNull @Size(max = 14) List<@NotNull @Valid Day> tripDays) {
 
     public record Day(@NotNull @Size(max = 10) List<@NotBlank @Size(max = 225) String> tripPois) {}

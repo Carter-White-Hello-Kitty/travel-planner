@@ -30,17 +30,17 @@ CREATE TABLE IF NOT EXISTS trips
     status    VARCHAR(20) NOT NULL,
     day_count INTEGER     NOT NULL,
     start_date DATE NULL,
-    revision BIGINT NOT NULL DEFAULT 0
+    edit_timestamp BIGINT NOT NULL DEFAULT 0
 );
 
--- Existing local volumes may contain trips created before editable plan versions.
-SET @trip_revision_exists = (SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'trips' AND column_name = 'revision');
-SET @trip_revision_sql = IF(@trip_revision_exists = 0,
-    'ALTER TABLE trips ADD COLUMN revision BIGINT NOT NULL DEFAULT 0', 'SELECT 1');
-PREPARE trip_revision_stmt FROM @trip_revision_sql;
-EXECUTE trip_revision_stmt;
-DEALLOCATE PREPARE trip_revision_stmt;
+-- Existing local volumes may contain trips created before edit timestamps.
+SET @trip_edit_timestamp_exists = (SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'trips' AND column_name = 'edit_timestamp');
+SET @trip_edit_timestamp_sql = IF(@trip_edit_timestamp_exists = 0,
+    'ALTER TABLE trips ADD COLUMN edit_timestamp BIGINT NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE trip_edit_timestamp_stmt FROM @trip_edit_timestamp_sql;
+EXECUTE trip_edit_timestamp_stmt;
+DEALLOCATE PREPARE trip_edit_timestamp_stmt;
 
 CREATE TABLE IF NOT EXISTS trip_days
 (

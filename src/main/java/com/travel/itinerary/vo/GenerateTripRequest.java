@@ -23,7 +23,7 @@ public record GenerateTripRequest(
         @Valid SearchArea searchArea,
         @NotNull @Valid Constraints constraints,
         List<@NotNull @Valid Day> tripDays,
-        @NotNull @Min(0) Long revision) {
+        @NotNull @Min(1) Long editTimestamp) {
 
     public GenerateTripRequest(String name, LocalDate startDate, Integer dayCount,
             SearchArea searchArea, Constraints constraints, List<Day> tripDays) {

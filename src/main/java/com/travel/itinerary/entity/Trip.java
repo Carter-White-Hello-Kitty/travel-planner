@@ -47,9 +47,9 @@ public class Trip {
     @Column(name = "start_date")
     private LocalDate startDate;
 
-    /** Editable plan version, advanced while holding the trip row lock. */
+    /** Greatest client edit timestamp accepted for this trip. */
     @Column(nullable = false)
-    private Long revision = 0L;
+    private Long editTimestamp = 0L;
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripDay> tripDays = new ArrayList<>();

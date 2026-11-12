@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.travel.auth.repository.UserRepository;
 import com.travel.auth.config.Secrets;
 import com.travel.auth.service.TokenService;
+import com.travel.common.ApiError;
 import com.travel.itinerary.entity.Trip;
 import com.travel.itinerary.entity.TripDay;
 import com.travel.itinerary.entity.TripPoi;
@@ -17,6 +18,7 @@ import com.travel.itinerary.entity.TripPoiStatus;
 import com.travel.itinerary.entity.TripStatus;
 import com.travel.itinerary.repository.TripRepository;
 import com.travel.itinerary.service.TripService;
+import com.travel.itinerary.vo.SaveTripRequest;
 import com.travel.poisearch.client.GooglePlacesClient;
 import com.travel.poisearch.vo.PoiVO;
 import java.time.LocalDate;
@@ -119,38 +121,75 @@ class TripLifecycleIntegrationTest {
         assertEquals(201, created.getStatus(), created.getContentAsString());
         JsonNode draft = json.readTree(created.getContentAsString()).get("data");
         Long id = draft.get("tripId").asLong();
-        assertEquals(0, draft.get("revision").asLong());
+        assertEquals(0, draft.get("editTimestamp").asLong());
         assertEquals("Planning", statusOf(id));
         assertEquals(0, json.readTree(detail(id, ownerToken).getContentAsString())
                 .get("data").get("tripDays").size());
 
         String first = """
-                {"name":"Manhattan","startDate":"2026-12-01","revision":0,
+                {"name":"Manhattan","startDate":"2026-12-01","editTimestamp":101,
                  "tripDays":[{"tripPois":["place-a","place-b"]},
                              {"tripPois":["place-c"]}]}
                 """;
         MockHttpServletResponse saved = saveTrip(id, first, ownerToken);
         assertEquals(200, saved.getStatus(), saved.getContentAsString());
-        assertEquals(1, json.readTree(saved.getContentAsString()).get("data").get("revision").asLong());
+        assertEquals(101, json.readTree(saved.getContentAsString()).get("data").get("editTimestamp").asLong());
         assertEquals(6, rowsFor(id));
         stubPlaces();
         JsonNode details = json.readTree(detail(id, ownerToken).getContentAsString()).get("data");
         assertEquals("Manhattan", details.get("name").asText());
-        assertEquals(1, details.get("revision").asLong());
+        assertEquals(101, details.get("editTimestamp").asLong());
         assertEquals("place-b", details.get("tripDays").get(0).get("tripPois")
                 .get(1).get("googlePlaceId").asText());
 
         String second = """
-                {"name":"Updated","startDate":"2026-12-02","revision":1,
+                {"name":"Updated","startDate":"2026-12-02","editTimestamp":102,
                  "tripDays":[{"tripPois":["place-c"]}]}
                 """;
         assertEquals(200, saveTrip(id, second, ownerToken).getStatus());
         assertEquals(3, rowsFor(id));
-        assertError(saveTrip(id, first, ownerToken), 409, "STALE_TRIP_REVISION");
+        assertError(saveTrip(id, first, ownerToken), 409, "STALE_TRIP_EDIT");
         assertEquals(3, rowsFor(id));
 
         assertEquals(200, call("/trips/" + id + "/start", ownerToken).getStatus());
         assertError(saveTrip(id, second, ownerToken), 409, "INVALID_TRIP_STATUS");
+    }
+
+    @Test
+    void concurrentFullPlanSavesKeepTheGreaterEditTimestamp() throws Exception {
+        TokenService.Identity caller = new TokenService.Identity(
+                userRepository.findByEmail(OWNER).orElseThrow().getId(), UUID.randomUUID());
+        Long id = tripService.save(caller, null, null, true).tripId();
+        CountDownLatch start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var older = pool.submit(() -> {
+                start.await();
+                try {
+                    tripService.save(caller, id,
+                            new SaveTripRequest("Older edit", null, 101L, List.of()), false);
+                    return "saved";
+                } catch (ApiError error) {
+                    return error.code;
+                }
+            });
+            var newer = pool.submit(() -> {
+                start.await();
+                return tripService.save(caller, id,
+                        new SaveTripRequest("Newer edit", null, 103L, List.of()), false);
+            });
+            start.countDown();
+
+            assertEquals(103L, newer.get(10, TimeUnit.SECONDS).editTimestamp());
+            assertTrue(List.of("saved", "STALE_TRIP_EDIT").contains(older.get(10, TimeUnit.SECONDS)));
+            assertEquals("Newer edit", db.queryForObject("SELECT name FROM trips WHERE id = ?",
+                    String.class, id));
+            assertEquals(103L, db.queryForObject("SELECT edit_timestamp FROM trips WHERE id = ?",
+                    Long.class, id));
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -161,7 +200,7 @@ class TripLifecycleIntegrationTest {
         assertError(call("/trips/" + id + "/start", ownerToken), 409, "INCOMPLETE_TRIP");
         String otherToken = registerAndLogin(OTHER);
         assertError(saveTrip(id, """
-                {"name":"Stolen","revision":0,"tripDays":[]}
+                {"name":"Stolen","editTimestamp":101,"tripDays":[]}
                 """, otherToken), 403, "FORBIDDEN");
         assertEquals("Planning", statusOf(id));
     }
@@ -456,7 +495,7 @@ class TripLifecycleIntegrationTest {
                 .content("""
                         {"name":"Invalid trip","startDate":"2026-12-01","dayCount":0,
                          "searchArea":{"latitude":40.758,"longitude":-73.9855,"radiusMeters":15000},
-                         "constraints":{"maxPoisPerDay":3,"preferredTypes":[]},"revision":0}
+                         "constraints":{"maxPoisPerDay":3,"preferredTypes":[]},"editTimestamp":101}
                         """)).andReturn().getResponse();
 
         assertError(response, 400, "INVALID_REQUEST");
