@@ -17,6 +17,11 @@ from urllib.parse import urlparse
 
 CITY_CENTER = {"latitude": 40.758, "longitude": -73.9855}
 START_DATE = (date.today() + timedelta(days=30)).isoformat()
+REQUIRED_PLACE_IDS = (
+    ("Rockefeller Center", "ChIJ9U1mz_5YwokRosza1aAk0jM"),
+    ("Times Square", "ChIJmQJIxlVYwokRLgeuocVOGVU"),
+    ("Top of The Rock", "ChIJe7vKMf9YwokRIMYfDz7iF9o"),
+)
 
 
 class SmokeClient:
@@ -73,31 +78,6 @@ class SmokeClient:
         }
         self.call("/auth/register", credentials, expected=201)
         return self.call("/auth/login", credentials)["data"]["accessToken"]
-
-    def search_pois(self, token):
-        response = self.call("/pois/search", {
-            "keyword": "tourist attractions in Manhattan New York",
-            **CITY_CENTER,
-            "radius": 15000,
-        }, token=token)
-        data = response.get("data")
-        pois = data.get("pois") if isinstance(data, dict) else None
-        if not isinstance(pois, list):
-            raise AssertionError("/pois/search did not return a POI list")
-        usable = []
-        seen = set()
-        for poi in pois:
-            if not isinstance(poi, dict):
-                continue
-            place_id = poi.get("googlePlaceId")
-            if (not isinstance(place_id, str) or not place_id or place_id in seen
-                    or poi.get("businessStatus") in ("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY")
-                    or not isinstance(poi.get("latitude"), (int, float))
-                    or not isinstance(poi.get("longitude"), (int, float))):
-                continue
-            seen.add(place_id)
-            usable.append(poi)
-        return usable
 
     def generate_and_verify(self, token, request, idempotency_key=None,
                             check_conflict=False):

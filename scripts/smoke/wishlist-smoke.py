@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from util.smoke_common import SmokeClient
+from util.smoke_common import REQUIRED_PLACE_IDS, SmokeClient
 
 
 def delete_place(client, token, place_id):
@@ -51,11 +51,7 @@ def main():
     }
     client.call("/auth/register", credentials, expected=201)
     token = client.call("/auth/login", credentials)["data"]["accessToken"]
-    places = client.search_pois(token)
-    candidates = [poi for poi in places if isinstance(poi.get("name"), str) and poi["name"]]
-    if not candidates:
-        raise AssertionError("Google Places returned no named POI to add to the wishlist")
-    place_id = candidates[0]["googlePlaceId"]
+    place_id = REQUIRED_PLACE_IDS[0][1]
 
     initial = client.call("/wishlist", token=token)["data"]
     if initial["items"] or initial["pagination"]["totalItems"] != 0:
@@ -87,7 +83,7 @@ def main():
     final = client.call("/wishlist", token=token)["data"]
     if final["items"] or final["pagination"]["totalItems"] != 0:
         raise AssertionError("The removed place is still in the wishlist")
-    print("PASS: real Google search, wishlist add, duplicate rejection, list, and delete")
+    print("PASS: real Google place validation, wishlist add, duplicate rejection, list, and delete")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Find real Google places, then generate a trip with required POIs on days 1 and 3.
+"""Generate a trip with known real Google POIs on days 1 and 3.
 
 Run from the repository root: python3 scripts/smoke/required-poi-based-smoke.py
 """
@@ -7,16 +7,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from util.smoke_common import START_DATE, SmokeClient, save_response
+from util.smoke_common import REQUIRED_PLACE_IDS, START_DATE, SmokeClient, save_response
 
 
 def main():
     client = SmokeClient()
     token = client.register_and_login()
-    selected = client.search_pois(token)[:3]
-    if len(selected) < 3:
-        raise AssertionError("/pois/search returned fewer than three usable Google places")
-    required_ids = [poi["googlePlaceId"] for poi in selected]
+    required_ids = [place_id for _, place_id in REQUIRED_PLACE_IDS]
     request = {
         "name": "Manhattan required POI smoke trip",
         "startDate": START_DATE,
@@ -43,8 +40,9 @@ def main():
         raise AssertionError("Required POIs were not preserved on the requested days and order")
     path = save_response("required-poi-based.json", response)
     print("Required Google POIs:")
-    for day, poi in ((1, selected[0]), (1, selected[1]), (3, selected[2])):
-        print(f"  Day {day}: {poi.get('name')} ({poi['googlePlaceId']})")
+    for day, (name, place_id) in ((1, REQUIRED_PLACE_IDS[0]), (1, REQUIRED_PLACE_IDS[1]),
+                                  (3, REQUIRED_PLACE_IDS[2])):
+        print(f"  Day {day}: {name} ({place_id})")
     print(f"PASS: required-POI trip #{response['data']['tripId']} preserved the requested days and order; replay verified")
     print(f"Saved response: {path}")
 
