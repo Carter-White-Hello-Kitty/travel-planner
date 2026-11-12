@@ -22,7 +22,13 @@ public record GenerateTripRequest(
         @NotNull @Min(1) @Max(14) Integer dayCount,
         @Valid SearchArea searchArea,
         @NotNull @Valid Constraints constraints,
-        List<@NotNull @Valid Day> tripDays) {
+        List<@NotNull @Valid Day> tripDays,
+        @NotNull @Min(0) Long revision) {
+
+    public GenerateTripRequest(String name, LocalDate startDate, Integer dayCount,
+            SearchArea searchArea, Constraints constraints, List<Day> tripDays) {
+        this(name, startDate, dayCount, searchArea, constraints, tripDays, null);
+    }
 
     public record SearchArea(
             @NotNull @DecimalMin("-90.0") @DecimalMax("90.0") Double latitude,

@@ -105,6 +105,7 @@ class SmokeClient:
         created = self.call("/trips", {"name": request["name"], "tripDays": []},
                             token=token, expected=201)
         trip_id = created["data"]["tripId"]
+        request = {**request, "revision": created["data"]["revision"]}
         path = f"/trips/{trip_id}/generate"
         response = self.call(path, request, token=token, expected=200,
                              idempotency_key=request_id)
@@ -116,7 +117,8 @@ class SmokeClient:
                 or data.get("startDate") != request["startDate"]
                 or data.get("status") != "Planning"
                 or data.get("dayCount") != request["dayCount"]
-                or data.get("tripId") != trip_id):
+                or data.get("tripId") != trip_id
+                or data.get("revision") != request["revision"] + 1):
             raise AssertionError("/trips returned incorrect trip metadata")
         days = data.get("tripDays")
         if not isinstance(days, list) or len(days) != request["dayCount"]:

@@ -131,24 +131,30 @@ class TripGenerationIdempotencyIntegrationTest {
     }
 
     @Test
-    void laterEditAndRegenerationKeepOneTrip() {
+    void laterEditAndRegenerationKeepOneTripAndInvalidateOldReplay() {
         PoiVO firstPlace = place();
         when(search.search(any())).thenReturn(List.of(firstPlace));
         String firstId = requestId();
         GenerateTripRequest firstBody = request("First plan");
         GeneratedTrip first = generate(identity(), firstId, firstBody).trip();
         assertEquals(draftId, first.tripId());
-        service.save(identity(), draftId,
-                new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1),
+        assertEquals(1L, first.revision());
+        var saved = service.save(identity(), draftId,
+                new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 1L,
                         List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
+        assertEquals(2L, saved.revision());
+        ApiError stale = assertThrows(ApiError.class,
+                () -> generate(identity(), firstId, firstBody));
+        assertEquals("STALE_GENERATION", stale.code);
 
         String secondId = requestId();
         GenerateTripRequest secondBody = new GenerateTripRequest("Second plan",
                 LocalDate.of(2026, 12, 1), 1,
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000),
-                new GenerateTripRequest.Constraints(2, List.of()), null);
+                new GenerateTripRequest.Constraints(2, List.of()), null, 2L);
         GeneratedTrip second = generate(identity(), secondId, secondBody).trip();
         assertEquals(first.tripId(), second.tripId());
+        assertEquals(3L, second.revision());
         assertEquals(1L, tripCount());
         assertEquals(2L, requestCount());
 
@@ -293,6 +299,50 @@ class TripGenerationIdempotencyIntegrationTest {
         assertNotNull(first.get(10, TimeUnit.SECONDS).trip());
         assertEquals(1L, tripCount());
         assertEquals(1L, requestCount());
+        verify(search, times(1)).search(any());
+    }
+
+    @Test
+    void autoSaveDuringGenerationMakesTheGeneratedPlanStale() throws Exception {
+        PoiVO place = place();
+        CountDownLatch searchStarted = new CountDownLatch(1);
+        CountDownLatch finishSearch = new CountDownLatch(1);
+        when(search.search(any())).thenAnswer(invocation -> {
+            searchStarted.countDown();
+            if (!finishSearch.await(10, TimeUnit.SECONDS))
+                throw new IllegalStateException("Timed out waiting to finish mocked Google search");
+            return List.of(place);
+        });
+        String requestId = requestId();
+        GenerateTripRequest body = request("Generated plan");
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        Future<TripService.GenerationOutcome> generation = worker.submit(
+                () -> generate(identity(), requestId, body));
+        try {
+            assertTrue(searchStarted.await(10, TimeUnit.SECONDS));
+            var saved = service.save(identity(), draftId,
+                    new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1), 0L,
+                            List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
+            assertEquals(1L, saved.revision());
+        } finally {
+            finishSearch.countDown();
+            worker.shutdown();
+        }
+
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> generation.get(10, TimeUnit.SECONDS));
+        assertTrue(failure.getCause() instanceof ApiError);
+        assertEquals("STALE_TRIP_REVISION", ((ApiError) failure.getCause()).code);
+        assertEquals("Manual edit", db.queryForObject("SELECT name FROM trips WHERE id = ?",
+                String.class, draftId));
+        assertEquals(1L, db.queryForObject("SELECT revision FROM trips WHERE id = ?",
+                Long.class, draftId));
+        assertEquals(0L, requestCount());
+        assertEquals(Boolean.FALSE, redis.hasKey(key(requestId)));
+
+        ApiError earlyConflict = assertThrows(ApiError.class,
+                () -> generate(identity(), requestId(), body));
+        assertEquals("STALE_TRIP_REVISION", earlyConflict.code);
         verify(search, times(1)).search(any());
     }
 
@@ -509,7 +559,7 @@ class TripGenerationIdempotencyIntegrationTest {
     private static GenerateTripRequest request(String name) {
         return new GenerateTripRequest(name, LocalDate.of(2026, 12, 1), 1,
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000),
-                new GenerateTripRequest.Constraints(2, List.of()), null);
+                new GenerateTripRequest.Constraints(2, List.of()), null, 0L);
     }
 
     private static PoiVO place() {

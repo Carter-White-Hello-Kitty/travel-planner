@@ -197,7 +197,9 @@ class TripGenerationIntegrationTest {
     private Long draftId;
 
     private TripService.GenerationOutcome generate(TokenService.Identity caller, String id, GenerateTripRequest body) {
-        return service.generate(caller, draftId, id, body);
+        GenerateTripRequest versioned = new GenerateTripRequest(body.name(), body.startDate(),
+                body.dayCount(), body.searchArea(), body.constraints(), body.tripDays(), 0L);
+        return service.generate(caller, draftId, id, versioned);
     }
 
     private static TokenService.Identity identity(Long userId) {

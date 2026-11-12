@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -14,6 +15,7 @@ import java.util.Set;
 public record SaveTripRequest(
         @NotBlank @Size(max = 255) String name,
         LocalDate startDate,
+        @Min(0) Long revision,
         @NotNull @Size(max = 14) List<@NotNull @Valid Day> tripDays) {
 
     public record Day(@NotNull @Size(max = 10) List<@NotBlank @Size(max = 225) String> tripPois) {}

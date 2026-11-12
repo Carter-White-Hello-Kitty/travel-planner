@@ -29,14 +29,15 @@ CREATE TABLE IF NOT EXISTS trips
     name      VARCHAR(255) NOT NULL,
     status    VARCHAR(20) NOT NULL,
     day_count INTEGER     NOT NULL,
-    start_date DATE NULL
+    start_date DATE NULL,
+    revision BIGINT NOT NULL DEFAULT 0
 );
 
--- Existing local volumes may still have the removed revision column.
+-- Existing local volumes may contain trips created before editable plan versions.
 SET @trip_revision_exists = (SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = DATABASE() AND table_name = 'trips' AND column_name = 'revision');
-SET @trip_revision_sql = IF(@trip_revision_exists = 1,
-    'ALTER TABLE trips DROP COLUMN revision', 'SELECT 1');
+SET @trip_revision_sql = IF(@trip_revision_exists = 0,
+    'ALTER TABLE trips ADD COLUMN revision BIGINT NOT NULL DEFAULT 0', 'SELECT 1');
 PREPARE trip_revision_stmt FROM @trip_revision_sql;
 EXECUTE trip_revision_stmt;
 DEALLOCATE PREPARE trip_revision_stmt;

@@ -60,7 +60,7 @@ class TripGenerationControllerTest {
     private static final String BODY = """
             {"name":"New York Trip","startDate":"2026-12-01","dayCount":1,
              "searchArea":{"latitude":40.758,"longitude":-73.9855,"radiusMeters":15000},
-             "constraints":{"maxPoisPerDay":2,"preferredTypes":["museum"]}}
+             "constraints":{"maxPoisPerDay":2,"preferredTypes":["museum"]},"revision":0}
             """;
 
     @Configuration
@@ -104,7 +104,7 @@ class TripGenerationControllerTest {
 
     private static GeneratedTrip savedTrip() {
         return new GeneratedTrip(88L, "New York Trip", LocalDate.of(2026, 12, 1),
-                "Planning", 1, List.of(new GeneratedTrip.Day(1,
+                "Planning", 1, 1L, List.of(new GeneratedTrip.Day(1,
                 List.of(new GeneratedTrip.Poi(101L, "place_A", "Museum A", "New York, NY",
                         40.7794, -73.9632, "Planned")))));
     }

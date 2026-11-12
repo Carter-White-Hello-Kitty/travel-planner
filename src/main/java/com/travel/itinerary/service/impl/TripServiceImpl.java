@@ -139,17 +139,25 @@ public class TripServiceImpl implements TripService {
 
         GenerationOutcome cached = readCached(key, hash);
         if (cached != null) {
-            if (!cached.processing()) return cached;
+            if (!cached.processing()) {
+                requireCurrentGeneration(identity.userId(), tripId, request.revision());
+                return cached;
+            }
             // The trip may have committed while Redis was still PROCESSING (for example, a cache write failed).
             GenerationOutcome committedWhileProcessing = restoreCommitted(
-                    identity.userId(), tripId, canonicalId, hash, key);
+                    identity.userId(), tripId, canonicalId, hash, request.revision(), key);
             return committedWhileProcessing != null ? committedWhileProcessing : cached;
         }
-        GenerationOutcome committed = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
+        GenerationOutcome committed = restoreCommitted(identity.userId(), tripId, canonicalId,
+                hash, request.revision(), key);
         if (committed != null) return committed;
 
-        // Fail before Google calls when the trip is missing, started, deleted or belongs to another user.
-        requireEditableTrip(identity, tripId);
+        // Early ordinary read: reject stale input before the expensive Google calls.
+        // This read transaction ends before generation; only the final write locks the trip.
+        readTransactions.execute(status -> {
+            requireEditableRevision(identity, tripId, request.revision());
+            return null;
+        });
 
         // RateLimiter uses its own short MySQL transaction; never call it inside the trip save transaction.
         rateLimiter.hit("trip-generate:" + identity.userId(), rateLimit, rateWindowSeconds);
@@ -160,13 +168,17 @@ public class TripServiceImpl implements TripService {
         if (!claimed) {
             GenerationOutcome concurrent = readCached(key, hash);
             if (concurrent != null) {
-                if (!concurrent.processing()) return concurrent;
+                if (!concurrent.processing()) {
+                    requireCurrentGeneration(identity.userId(), tripId, request.revision());
+                    return concurrent;
+                }
                 GenerationOutcome committedMeanwhile = restoreCommitted(
-                        identity.userId(), tripId, canonicalId, hash, key);
+                        identity.userId(), tripId, canonicalId, hash, request.revision(), key);
                 return committedMeanwhile != null ? committedMeanwhile : concurrent;
             }
             // The other request's lease may have expired between SET NX and GET.
-            committed = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
+            committed = restoreCommitted(identity.userId(), tripId, canonicalId,
+                    hash, request.revision(), key);
             if (committed != null) return committed;
             throw new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "GENERATION_STATE_UNAVAILABLE",
                     "Generation state changed; retry with the same Idempotency-Key");
@@ -180,7 +192,8 @@ public class TripServiceImpl implements TripService {
         } catch (DataIntegrityViolationException duplicateOrDatabaseError) {
             // The failed transaction has rolled back. Look for the competing committed request now.
             try {
-                GenerationOutcome winner = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
+                GenerationOutcome winner = restoreCommitted(identity.userId(), tripId, canonicalId,
+                        hash, request.revision(), key);
                 if (winner != null) return winner;
             } catch (RuntimeException recoveryFailure) {
                 releaseOwnProcessing(key, claimValue, recoveryFailure);
@@ -189,6 +202,17 @@ public class TripServiceImpl implements TripService {
             releaseOwnProcessing(key, claimValue, duplicateOrDatabaseError);
             throw duplicateOrDatabaseError;
         } catch (RuntimeException generationFailure) {
+            // A lease may expire while a second invocation with the same key commits first.
+            if (generationFailure instanceof ApiError error && "STALE_TRIP_REVISION".equals(error.code)) {
+                try {
+                    GenerationOutcome winner = restoreCommitted(identity.userId(), tripId, canonicalId,
+                            hash, request.revision(), key);
+                    if (winner != null) return winner;
+                } catch (RuntimeException recoveryFailure) {
+                    releaseOwnProcessing(key, claimValue, recoveryFailure);
+                    throw recoveryFailure;
+                }
+            }
             releaseOwnProcessing(key, claimValue, generationFailure);
             throw generationFailure;
         }
@@ -199,7 +223,7 @@ public class TripServiceImpl implements TripService {
 
     private GeneratedTrip savePlan(TokenService.Identity identity, Long tripId, String requestId, String requestHash,
             GenerateTripRequest request, List<List<PoiVO>> plan) {
-        Trip trip = editableTripForUpdate(identity, tripId);
+        Trip trip = editableTripForUpdate(identity, tripId, request.revision());
         trip.setName(request.name().strip());
         trip.setStartDate(request.startDate());
         trip.getTripDays().clear();
@@ -219,6 +243,7 @@ public class TripServiceImpl implements TripService {
         }
 
         trip.setDayCount(plan.size());
+        trip.setRevision(trip.getRevision() + 1);
         tripRepository.save(trip);
         tripRepository.flush();
         TripGenerationRequest generation = new TripGenerationRequest();
@@ -242,7 +267,7 @@ public class TripServiceImpl implements TripService {
             resultDays.add(new GeneratedTrip.Day(dayIndex + 1, List.copyOf(resultPois)));
         }
         return new GeneratedTrip(trip.getId(), trip.getName(), trip.getStartDate(),
-                trip.getStatus().value(), plan.size(), List.copyOf(resultDays));
+                trip.getStatus().value(), plan.size(), trip.getRevision(), List.copyOf(resultDays));
     }
 
     private String canonicalRequestId(String requestId) {
@@ -265,7 +290,7 @@ public class TripServiceImpl implements TripService {
                         .map(day -> new CanonicalDay(day.dayNumber(), day.mustVisitPois().stream()
                                 .map(GenerateTripRequest.MustVisitPoi::googlePlaceId).toList()))
                         .toList();
-        CanonicalRequest canonical = new CanonicalRequest(tripId, request.name().strip(),
+        CanonicalRequest canonical = new CanonicalRequest(tripId, request.revision(), request.name().strip(),
                 request.startDate().toString(), request.dayCount(), request.searchArea(),
                 request.constraints().maxPoisPerDay(),
                 request.constraints().preferredTypes() == null
@@ -332,7 +357,7 @@ public class TripServiceImpl implements TripService {
     }
 
     private GenerationOutcome restoreCommitted(Long userId, Long tripId, String requestId,
-            String requestHash, String redisKey) {
+            String requestHash, Long baseRevision, String redisKey) {
         TripGenerationRequest recorded = generationRequests.findByUserIdAndRequestId(userId, requestId)
                 .orElse(null);
         if (recorded == null) return null;
@@ -344,6 +369,7 @@ public class TripServiceImpl implements TripService {
             Trip trip = tripRepository.findByIdAndUserId(recorded.getTripId(), userId)
                     .orElseThrow(() -> new ApiError(HttpStatus.SERVICE_UNAVAILABLE,
                             "GENERATION_RECORD_INVALID", "Saved trip is unavailable"));
+            requireGeneratedRevision(trip, baseRevision);
             return loadSavedTrip(trip);
         });
         GeneratedTrip restored = restoreDisplayFields(saved);
@@ -361,7 +387,7 @@ public class TripServiceImpl implements TripService {
             days.add(new SavedDay(day.getDayNumber(), pois));
         }
         return new SavedTrip(trip.getId(), trip.getName(), trip.getStartDate(),
-                trip.getStatus().value(), trip.getDayCount(), List.copyOf(days));
+                trip.getStatus().value(), trip.getDayCount(), trip.getRevision(), List.copyOf(days));
     }
 
     private GeneratedTrip restoreDisplayFields(SavedTrip saved) {
@@ -380,27 +406,43 @@ public class TripServiceImpl implements TripService {
             days.add(new GeneratedTrip.Day(day.dayNumber(), List.copyOf(pois)));
         }
         return new GeneratedTrip(saved.id(), saved.name(), saved.startDate(), saved.status(),
-                saved.dayCount(), List.copyOf(days));
+                saved.dayCount(), saved.revision(), List.copyOf(days));
     }
 
-    private void requireEditableTrip(TokenService.Identity identity, Long tripId) {
+    private void requireCurrentGeneration(Long userId, Long tripId, Long baseRevision) {
+        Trip trip = tripRepository.findByIdAndUserId(tripId, userId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
+        requireGeneratedRevision(trip, baseRevision);
+    }
+
+    private static void requireGeneratedRevision(Trip trip, Long baseRevision) {
+        if (trip.getStatus() != TripStatus.PLANNING || baseRevision == null
+                || !Long.valueOf(baseRevision + 1).equals(trip.getRevision()))
+            throw new ApiError(HttpStatus.CONFLICT, "STALE_GENERATION",
+                    "This generation was superseded by a later trip change");
+    }
+
+    private void requireEditableRevision(TokenService.Identity identity, Long tripId, Long revision) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
         Ownership.requireOwner(identity, trip.getUser().getId());
-        requirePlanning(trip);
+        requirePlanningAndRevision(trip, revision);
     }
 
-    private Trip editableTripForUpdate(TokenService.Identity identity, Long tripId) {
+    private Trip editableTripForUpdate(TokenService.Identity identity, Long tripId, Long revision) {
         Trip trip = tripRepository.findByIdForUpdate(tripId)
                 .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
         Ownership.requireOwner(identity, trip.getUser().getId());
-        requirePlanning(trip);
+        requirePlanningAndRevision(trip, revision);
         return trip;
     }
 
-    private static void requirePlanning(Trip trip) {
+    private static void requirePlanningAndRevision(Trip trip, Long revision) {
         if (trip.getStatus() != TripStatus.PLANNING)
             throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS", "Only Planning trips can be edited");
+        if (revision == null || !revision.equals(trip.getRevision()))
+            throw new ApiError(HttpStatus.CONFLICT, "STALE_TRIP_REVISION",
+                    "Trip has changed; reload it before saving or generating again");
     }
 
     private static void requireSameRequest(String storedHash, String requestHash) {
@@ -415,7 +457,7 @@ public class TripServiceImpl implements TripService {
     }
 
     private record CanonicalDay(Integer dayNumber, List<String> mustVisitPois) {}
-    private record CanonicalRequest(Long tripId, String name, String startDate, Integer dayCount,
+    private record CanonicalRequest(Long tripId, Long revision, String name, String startDate, Integer dayCount,
             GenerateTripRequest.SearchArea searchArea, Integer maxPoisPerDay,
             List<String> preferredTypes, List<CanonicalDay> tripDays) {}
     private record RedisState(String status, String requestHash,
@@ -424,7 +466,7 @@ public class TripServiceImpl implements TripService {
     private record SavedPoi(Long id, String googlePlaceId, String status) {}
     private record SavedDay(Integer dayNumber, List<SavedPoi> pois) {}
     private record SavedTrip(Long id, String name, LocalDate startDate,
-            String status, Integer dayCount, List<SavedDay> days) {}
+            String status, Integer dayCount, Long revision, List<SavedDay> days) {}
 
     @Override
     @Transactional
@@ -442,9 +484,11 @@ public class TripServiceImpl implements TripService {
             trip = new Trip();
             trip.setUser(owner);
             trip.setStatus(TripStatus.PLANNING);
+            trip.setRevision(0L);
         } else {
-            trip = editableTripForUpdate(identity, tripId);
+            trip = editableTripForUpdate(identity, tripId, request.revision());
             trip.getTripDays().clear();
+            trip.setRevision(trip.getRevision() + 1);
         }
         trip.setName(request == null ? "Untitled Trip" : request.name().strip());
         trip.setStartDate(request == null ? null : request.startDate());
@@ -464,7 +508,7 @@ public class TripServiceImpl implements TripService {
         }
         trip.setDayCount(trip.getTripDays().size());
         tripRepository.save(trip);
-        return new SavedTripResult(trip.getId());
+        return new SavedTripResult(trip.getId(), trip.getRevision());
     }
 
     @Override

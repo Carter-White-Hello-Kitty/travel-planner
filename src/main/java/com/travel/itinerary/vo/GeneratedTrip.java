@@ -10,6 +10,7 @@ public record GeneratedTrip(
         LocalDate startDate,
         String status,
         Integer dayCount,
+        Long revision,
         List<Day> tripDays) {
 
     public record Day(Integer dayNumber, List<Poi> tripPois) {}
