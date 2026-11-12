@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -97,6 +99,35 @@ class WishlistIntegrationTest {
         assertEquals("Wishlist retrieved successfully", body.get("message").asText());
         assertTrue(body.get("data").get("items").isEmpty());
         assertEquals(0, body.get("data").get("pagination").get("totalItems").asLong());
+    }
+
+    @Test
+    void idsReturnsOnlyCurrentUsersPlaceIdsWithoutCallingGoogle() throws Exception {
+        String otherToken = registerAndLogin(OTHER_EMAIL);
+        Long userId = db.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, EMAIL);
+        Long otherUserId = db.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, OTHER_EMAIL);
+        LocalDateTime now = LocalDateTime.now();
+        for (String id : List.of("place-a", "place-b"))
+            db.update("INSERT INTO wishlist (user_id, google_place_id, created_at) VALUES (?, ?, ?)",
+                    userId, id, now);
+        db.update("INSERT INTO wishlist (user_id, google_place_id, created_at) VALUES (?, ?, ?)",
+                otherUserId, "other-place", now);
+
+        MockHttpServletResponse response = mvc.perform(get("/wishlist/ids")
+                .header("Authorization", "Bearer " + token)).andReturn().getResponse();
+        assertEquals(200, response.getStatus());
+        JsonNode body = json.readTree(response.getContentAsString());
+        assertEquals("Wishlist IDs retrieved", body.get("message").asText());
+        List<String> ids = new ArrayList<>();
+        body.get("data").forEach(id -> ids.add(id.asText()));
+        assertEquals(Set.of("place-a", "place-b"), Set.copyOf(ids));
+
+        MockHttpServletResponse otherResponse = mvc.perform(get("/wishlist/ids")
+                .header("Authorization", "Bearer " + otherToken)).andReturn().getResponse();
+        assertEquals(200, otherResponse.getStatus());
+        assertEquals("other-place", json.readTree(otherResponse.getContentAsString())
+                .get("data").get(0).asText());
+        verifyNoInteractions(google);
     }
 
     @Test

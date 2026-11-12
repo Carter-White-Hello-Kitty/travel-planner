@@ -42,6 +42,11 @@ public class WishlistController {
         this.api = api;
     }
 
+    @GetMapping("/ids")
+    public Result<Set<String>> ids(@AuthenticationPrincipal TokenService.Identity identity) {
+        return api.ok("Wishlist IDs retrieved", wishlist.ids(user(identity)));
+    }
+
     @GetMapping
     public Result<WishlistPageVO> list(
             @AuthenticationPrincipal TokenService.Identity identity,

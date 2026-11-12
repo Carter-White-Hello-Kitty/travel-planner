@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -46,6 +47,11 @@ public class WishlistServiceImpl implements WishlistService {
         this.users = users;
         this.places = places;
         this.clock = clock;
+    }
+
+    @Override
+    public Set<String> ids(Long userId) {
+        return wishlist.findPlaceIdsByUserId(userId);
     }
 
     @Override
