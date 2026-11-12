@@ -61,9 +61,9 @@ class TripStatusTest {
     }
 
     @Test
-    void onlyPlanningAndOngoingTripsAreEditable() {
+    void onlyPlanningTripsAreEditable() {
         for (TripStatus s : TripStatus.values()) {
-            boolean editable = s == TripStatus.PLANNING || s == TripStatus.ONGOING;
+            boolean editable = s == TripStatus.PLANNING;
             assertEquals(editable, s.isEditable(), s.value());
         }
     }

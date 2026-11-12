@@ -24,6 +24,8 @@ import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
 import com.travel.itinerary.vo.TripCheckInResult;
 import com.travel.itinerary.vo.TripSummary;
+import com.travel.itinerary.vo.SaveTripRequest;
+import com.travel.itinerary.vo.SavedTripResult;
 import com.travel.poisearch.client.GooglePlacesClient;
 import com.travel.poisearch.vo.PoiVO;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -127,12 +129,12 @@ public class TripServiceImpl implements TripService {
     }
 
     @Override
-    public GenerationOutcome generate(TokenService.Identity identity, String requestId,
+    public GenerationOutcome generate(TokenService.Identity identity, Long tripId, String requestId,
             GenerateTripRequest request) {
         if (identity == null || identity.userId() == null)
             throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
         String canonicalId = canonicalRequestId(requestId);
-        String hash = requestHash(request);
+        String hash = requestHash(tripId, request);
         String key = RedisConstant.TRIP_GENERATION_KEY_PREFIX + identity.userId() + ":" + canonicalId;
 
         GenerationOutcome cached = readCached(key, hash);
@@ -140,11 +142,14 @@ public class TripServiceImpl implements TripService {
             if (!cached.processing()) return cached;
             // The trip may have committed while Redis was still PROCESSING (for example, a cache write failed).
             GenerationOutcome committedWhileProcessing = restoreCommitted(
-                    identity.userId(), canonicalId, hash, key);
+                    identity.userId(), tripId, canonicalId, hash, key);
             return committedWhileProcessing != null ? committedWhileProcessing : cached;
         }
-        GenerationOutcome committed = restoreCommitted(identity.userId(), canonicalId, hash, key);
+        GenerationOutcome committed = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
         if (committed != null) return committed;
+
+        // Fail before Google calls when the trip is missing, started, deleted or belongs to another user.
+        requireEditableTrip(identity, tripId);
 
         // RateLimiter uses its own short MySQL transaction; never call it inside the trip save transaction.
         rateLimiter.hit("trip-generate:" + identity.userId(), rateLimit, rateWindowSeconds);
@@ -157,11 +162,11 @@ public class TripServiceImpl implements TripService {
             if (concurrent != null) {
                 if (!concurrent.processing()) return concurrent;
                 GenerationOutcome committedMeanwhile = restoreCommitted(
-                        identity.userId(), canonicalId, hash, key);
+                        identity.userId(), tripId, canonicalId, hash, key);
                 return committedMeanwhile != null ? committedMeanwhile : concurrent;
             }
             // The other request's lease may have expired between SET NX and GET.
-            committed = restoreCommitted(identity.userId(), canonicalId, hash, key);
+            committed = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
             if (committed != null) return committed;
             throw new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "GENERATION_STATE_UNAVAILABLE",
                     "Generation state changed; retry with the same Idempotency-Key");
@@ -171,11 +176,11 @@ public class TripServiceImpl implements TripService {
         try {
             List<List<PoiVO>> plan = generationService.generatePlan(request, maxGenerationDuration);
             saved = transactions.execute(status ->
-                    savePlan(identity.userId(), canonicalId, hash, request, plan));
+                    savePlan(identity, tripId, canonicalId, hash, request, plan));
         } catch (DataIntegrityViolationException duplicateOrDatabaseError) {
             // The failed transaction has rolled back. Look for the competing committed request now.
             try {
-                GenerationOutcome winner = restoreCommitted(identity.userId(), canonicalId, hash, key);
+                GenerationOutcome winner = restoreCommitted(identity.userId(), tripId, canonicalId, hash, key);
                 if (winner != null) return winner;
             } catch (RuntimeException recoveryFailure) {
                 releaseOwnProcessing(key, claimValue, recoveryFailure);
@@ -192,16 +197,12 @@ public class TripServiceImpl implements TripService {
         return new GenerationOutcome(saved, false);
     }
 
-    private GeneratedTrip savePlan(Long userId, String requestId, String requestHash,
+    private GeneratedTrip savePlan(TokenService.Identity identity, Long tripId, String requestId, String requestHash,
             GenerateTripRequest request, List<List<PoiVO>> plan) {
-        User owner = userRepository.findById(userId).orElseThrow(() ->
-                new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required"));
-        Trip trip = new Trip();
-        trip.setUser(owner);
+        Trip trip = editableTripForUpdate(identity, tripId);
         trip.setName(request.name().strip());
         trip.setStartDate(request.startDate());
-        trip.setDayCount(plan.size());
-        trip.setStatus(TripStatus.PLANNING);
+        trip.getTripDays().clear();
         for (int dayIndex = 0; dayIndex < plan.size(); dayIndex++) {
             TripDay day = new TripDay();
             day.setDayNumber(dayIndex + 1);
@@ -217,9 +218,11 @@ public class TripServiceImpl implements TripService {
             }
         }
 
+        trip.setDayCount(plan.size());
         tripRepository.save(trip);
+        tripRepository.flush();
         TripGenerationRequest generation = new TripGenerationRequest();
-        generation.setUserId(userId);
+        generation.setUserId(identity.userId());
         generation.setRequestId(requestId);
         generation.setRequestHash(requestHash);
         generation.setTripId(trip.getId());
@@ -255,14 +258,14 @@ public class TripServiceImpl implements TripService {
         }
     }
 
-    private String requestHash(GenerateTripRequest request) {
+    private String requestHash(Long tripId, GenerateTripRequest request) {
         List<CanonicalDay> days = request.tripDays() == null || request.searchArea() != null
                 ? List.of() : request.tripDays().stream()
                         .sorted(Comparator.comparing(GenerateTripRequest.Day::dayNumber))
                         .map(day -> new CanonicalDay(day.dayNumber(), day.mustVisitPois().stream()
                                 .map(GenerateTripRequest.MustVisitPoi::googlePlaceId).toList()))
                         .toList();
-        CanonicalRequest canonical = new CanonicalRequest(request.name().strip(),
+        CanonicalRequest canonical = new CanonicalRequest(tripId, request.name().strip(),
                 request.startDate().toString(), request.dayCount(), request.searchArea(),
                 request.constraints().maxPoisPerDay(),
                 request.constraints().preferredTypes() == null
@@ -328,12 +331,15 @@ public class TripServiceImpl implements TripService {
         }
     }
 
-    private GenerationOutcome restoreCommitted(Long userId, String requestId,
+    private GenerationOutcome restoreCommitted(Long userId, Long tripId, String requestId,
             String requestHash, String redisKey) {
         TripGenerationRequest recorded = generationRequests.findByUserIdAndRequestId(userId, requestId)
                 .orElse(null);
         if (recorded == null) return null;
         requireSameRequest(recorded.getRequestHash(), requestHash);
+        if (!tripId.equals(recorded.getTripId()))
+            throw new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
+                    "Idempotency-Key was already used for another trip");
         SavedTrip saved = readTransactions.execute(status -> {
             Trip trip = tripRepository.findByIdAndUserId(recorded.getTripId(), userId)
                     .orElseThrow(() -> new ApiError(HttpStatus.SERVICE_UNAVAILABLE,
@@ -377,6 +383,26 @@ public class TripServiceImpl implements TripService {
                 saved.dayCount(), List.copyOf(days));
     }
 
+    private void requireEditableTrip(TokenService.Identity identity, Long tripId) {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
+        Ownership.requireOwner(identity, trip.getUser().getId());
+        requirePlanning(trip);
+    }
+
+    private Trip editableTripForUpdate(TokenService.Identity identity, Long tripId) {
+        Trip trip = tripRepository.findByIdForUpdate(tripId)
+                .orElseThrow(() -> new ApiError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Trip not found"));
+        Ownership.requireOwner(identity, trip.getUser().getId());
+        requirePlanning(trip);
+        return trip;
+    }
+
+    private static void requirePlanning(Trip trip) {
+        if (trip.getStatus() != TripStatus.PLANNING)
+            throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS", "Only Planning trips can be edited");
+    }
+
     private static void requireSameRequest(String storedHash, String requestHash) {
         if (!requestHash.equals(storedHash))
             throw new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
@@ -389,7 +415,7 @@ public class TripServiceImpl implements TripService {
     }
 
     private record CanonicalDay(Integer dayNumber, List<String> mustVisitPois) {}
-    private record CanonicalRequest(String name, String startDate, Integer dayCount,
+    private record CanonicalRequest(Long tripId, String name, String startDate, Integer dayCount,
             GenerateTripRequest.SearchArea searchArea, Integer maxPoisPerDay,
             List<String> preferredTypes, List<CanonicalDay> tripDays) {}
     private record RedisState(String status, String requestHash,
@@ -399,6 +425,47 @@ public class TripServiceImpl implements TripService {
     private record SavedDay(Integer dayNumber, List<SavedPoi> pois) {}
     private record SavedTrip(Long id, String name, LocalDate startDate,
             String status, Integer dayCount, List<SavedDay> days) {}
+
+    @Override
+    @Transactional
+    public SavedTripResult save(TokenService.Identity identity, Long tripId,
+            SaveTripRequest request, boolean create) {
+        if (identity == null || identity.userId() == null)
+            throw new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required");
+        if (!create && request == null)
+            throw ApiError.invalid("request", "A complete trip plan is required");
+        Trip trip;
+        if (create) {
+            if (tripId != null) throw ApiError.invalid("tripId", "New trips cannot have an ID");
+            User owner = userRepository.findById(identity.userId()).orElseThrow(() ->
+                    new ApiError(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "Authentication required"));
+            trip = new Trip();
+            trip.setUser(owner);
+            trip.setStatus(TripStatus.PLANNING);
+        } else {
+            trip = editableTripForUpdate(identity, tripId);
+            trip.getTripDays().clear();
+        }
+        trip.setName(request == null ? "Untitled Trip" : request.name().strip());
+        trip.setStartDate(request == null ? null : request.startDate());
+        if (request != null) {
+            for (int dayIndex = 0; dayIndex < request.tripDays().size(); dayIndex++) {
+                TripDay day = new TripDay();
+                day.setDayNumber(dayIndex + 1);
+                trip.addDay(day);
+                List<String> ids = request.tripDays().get(dayIndex).tripPois();
+                for (int position = 0; position < ids.size(); position++) {
+                    TripPoi poi = new TripPoi();
+                    poi.setGooglePlaceId(ids.get(position));
+                    poi.setSequence(position + 1);
+                    day.addPoi(poi);
+                }
+            }
+        }
+        trip.setDayCount(trip.getTripDays().size());
+        tripRepository.save(trip);
+        return new SavedTripResult(trip.getId());
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -446,24 +513,24 @@ public class TripServiceImpl implements TripService {
             throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS",
                     "Only Planning trips can be deleted");
 
-        String cacheKey = generationRequests.findByTripId(tripId)
+        List<String> cacheKeys = generationRequests.findAllByTripId(tripId).stream()
                 .map(r -> RedisConstant.TRIP_GENERATION_KEY_PREFIX + r.getUserId() + ":" + r.getRequestId())
-                .orElse(null);
+                .toList();
         // Children before parents: POIs point to days; days and generation records point to the trip.
         tripPoiRepository.deleteByTripId(tripId);
         tripDayRepository.deleteByTripId(tripId);
         generationRequests.deleteByTripId(tripId);
         tripRepository.delete(trip);
-        if (cacheKey != null) deleteCachedGenerationAfterCommit(cacheKey);
+        if (!cacheKeys.isEmpty()) deleteCachedGenerationAfterCommit(cacheKeys);
     }
 
     /** Stops an Idempotency-Key replay from returning the deleted trip; MySQL stays the source of truth. */
-    private void deleteCachedGenerationAfterCommit(String key) {
+    private void deleteCachedGenerationAfterCommit(List<String> keys) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 try {
-                    redis.delete(key);
+                    redis.delete(keys);
                 } catch (RuntimeException e) {
                     log.warn("Deleted trip, but could not clear its cached generation result", e);
                 }
@@ -517,6 +584,15 @@ public class TripServiceImpl implements TripService {
         if (!current.canTransitionTo(next)) {
             throw new ApiError(HttpStatus.CONFLICT, "INVALID_TRIP_STATUS",
                     "Cannot change trip from " + current.value() + " to " + next.value());
+        }
+        if (next == TripStatus.ONGOING) {
+            List<TripDay> days = tripDayRepository.findByTripIdOrderByDayNumberAsc(tripId);
+            if (trip.getStartDate() == null || trip.getDayCount() == null || trip.getDayCount() == 0
+                    || days.size() != trip.getDayCount()
+                    || days.stream().anyMatch(day ->
+                            tripPoiRepository.findByTripDayIdOrderBySequenceAsc(day.getId()).isEmpty()))
+                throw new ApiError(HttpStatus.CONFLICT, "INCOMPLETE_TRIP",
+                        "Save a date and at least one POI for every day before starting");
         }
         trip.setStatus(next);
     }

@@ -74,7 +74,7 @@ class TripGenerationIntegrationTest {
         when(google.details(b.googlePlaceId())).thenReturn(b);
         when(search.search(any())).thenReturn(List.of(c));
 
-        GeneratedTrip result = service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
+        GeneratedTrip result = generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
                 "New York Trip", LocalDate.of(2026, 12, 1), 2, null,
                 new GenerateTripRequest.Constraints(2, List.of("museum")),
                 List.of(new GenerateTripRequest.Day(1, List.of(
@@ -118,7 +118,7 @@ class TripGenerationIntegrationTest {
         when(search.search(any())).thenReturn(List.of(a, b));
         var area = new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000);
 
-        GeneratedTrip result = service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
+        GeneratedTrip result = generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest(
                 "City trip", LocalDate.of(2026, 12, 1), 2, area,
                 new GenerateTripRequest.Constraints(2, List.of("museum")), null)).trip();
 
@@ -141,7 +141,7 @@ class TripGenerationIntegrationTest {
         when(google.details(b.googlePlaceId())).thenReturn(b);
         when(search.search(any())).thenReturn(List.of());
 
-        service.generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest("Two places",
+        generate(identity(userId), UUID.randomUUID().toString(), new GenerateTripRequest("Two places",
                 LocalDate.of(2026, 12, 1), 2, null,
                 new GenerateTripRequest.Constraints(1, List.of()),
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(a.googlePlaceId()))),
@@ -159,7 +159,7 @@ class TripGenerationIntegrationTest {
                 new GenerateTripRequest.SearchArea(40.758, -73.9855, 0),
                 new GenerateTripRequest.Constraints(2, List.of()), null);
 
-        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
+        assertThrows(ConstraintViolationException.class, () -> generate(identity(userId), UUID.randomUUID().toString(), request));
         verifyNoInteractions(google, search);
     }
 
@@ -172,7 +172,7 @@ class TripGenerationIntegrationTest {
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(id))),
                         new GenerateTripRequest.Day(2, List.of(new GenerateTripRequest.MustVisitPoi(id)))));
 
-        assertThrows(ConstraintViolationException.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
+        assertThrows(ConstraintViolationException.class, () -> generate(identity(userId), UUID.randomUUID().toString(), request));
         verifyNoInteractions(google, search);
     }
 
@@ -188,10 +188,16 @@ class TripGenerationIntegrationTest {
                 List.of(new GenerateTripRequest.Day(1, List.of(new GenerateTripRequest.MustVisitPoi(a.googlePlaceId()))),
                         new GenerateTripRequest.Day(2, List.of(new GenerateTripRequest.MustVisitPoi(b.googlePlaceId())))));
 
-        ApiError error = assertThrows(ApiError.class, () -> service.generate(identity(userId), UUID.randomUUID().toString(), request));
+        ApiError error = assertThrows(ApiError.class, () -> generate(identity(userId), UUID.randomUUID().toString(), request));
         assertEquals("INVALID_REQUEST", error.code);
         verifyNoInteractions(search);
-        assertTrue(trips.findByUserIdOrderByIdDesc(userId).isEmpty());
+        assertEquals(1, trips.findByUserIdOrderByIdDesc(userId).size());
+    }
+
+    private Long draftId;
+
+    private TripService.GenerationOutcome generate(TokenService.Identity caller, String id, GenerateTripRequest body) {
+        return service.generate(caller, draftId, id, body);
     }
 
     private static TokenService.Identity identity(Long userId) {
@@ -208,6 +214,8 @@ class TripGenerationIntegrationTest {
         User user = new User();
         user.setEmail("trip-gen-" + UUID.randomUUID() + "@example.com");
         user.setPasswordHash("unused-in-service-test");
-        return users.save(user).getId();
+        Long userId = users.save(user).getId();
+        draftId = service.save(identity(userId), null, null, true).tripId();
+        return userId;
     }
 }

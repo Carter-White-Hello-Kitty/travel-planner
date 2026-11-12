@@ -47,7 +47,7 @@ public class Trip {
     @Column(name = "start_date")
     private LocalDate startDate;
 
-    @OneToMany(mappedBy = "trip", cascade = CascadeType.PERSIST)
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripDay> tripDays = new ArrayList<>();
 
     public void addDay(TripDay day) {

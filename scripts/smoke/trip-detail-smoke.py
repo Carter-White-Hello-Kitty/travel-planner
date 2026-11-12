@@ -22,8 +22,7 @@ def main():
         "constraints": {"maxPoisPerDay": 1, "preferredTypes": []},
     }
 
-    created = client.call("/trips", request, token=token, expected=201)
-    generated = created.get("data")
+    generated = client.generate_and_verify(token, request).get("data")
     if not isinstance(generated, dict) or not isinstance(generated.get("tripId"), int):
         raise AssertionError("/trips did not create a trip")
 

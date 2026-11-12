@@ -93,7 +93,7 @@ class TripGenerationControllerTest {
     }
 
     private MockHttpServletRequestBuilder generate(String requestId) {
-        return post("/trips")
+        return post("/trips/88/generate")
                 .header("Authorization", "Bearer test-access")
                 .header("Idempotency-Key", requestId)
                 .cookie(new Cookie("XSRF-TOKEN", csrf))
@@ -112,23 +112,23 @@ class TripGenerationControllerTest {
     @Test
     void firstGenerationReturnsCreatedTripAndPassesRequestIdToService() throws Exception {
         String requestId = UUID.randomUUID().toString();
-        when(trips.generate(any(), eq(requestId), any()))
+        when(trips.generate(any(), eq(88L), eq(requestId), any()))
                 .thenReturn(new TripService.GenerationOutcome(savedTrip(), false));
 
         mvc.perform(generate(requestId))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("success"))
                 .andExpect(jsonPath("$.data.tripId").value(88))
                 .andExpect(jsonPath("$.data.status").value("Planning"))
                 .andExpect(jsonPath("$.data.tripDays[0].tripPois[0].googlePlaceId").value("place_A"));
-        verify(trips).generate(argThat(id -> id.userId().equals(17L)), eq(requestId),
+        verify(trips).generate(argThat(id -> id.userId().equals(17L)), eq(88L), eq(requestId),
                 any(GenerateTripRequest.class));
     }
 
     @Test
     void processingReturnsAcceptedAndRetryAfterWithoutTrip() throws Exception {
         String requestId = UUID.randomUUID().toString();
-        when(trips.generate(any(), eq(requestId), any()))
+        when(trips.generate(any(), eq(88L), eq(requestId), any()))
                 .thenReturn(new TripService.GenerationOutcome(null, true));
 
         mvc.perform(generate(requestId))
@@ -141,19 +141,19 @@ class TripGenerationControllerTest {
     @Test
     void completedReplayKeepsTheSameSuccessBody() throws Exception {
         String requestId = UUID.randomUUID().toString();
-        when(trips.generate(any(), eq(requestId), any()))
+        when(trips.generate(any(), eq(88L), eq(requestId), any()))
                 .thenReturn(new TripService.GenerationOutcome(savedTrip(), false));
 
-        String first = mvc.perform(generate(requestId)).andExpect(status().isCreated())
+        String first = mvc.perform(generate(requestId)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        String replay = mvc.perform(generate(requestId)).andExpect(status().isCreated())
+        String replay = mvc.perform(generate(requestId)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertEquals(first, replay);
     }
 
     @Test
     void corsPreflightAllowsIdempotencyHeader() throws Exception {
-        MvcResult response = mvc.perform(options("/trips")
+        MvcResult response = mvc.perform(options("/trips/88/generate")
                         .header("Origin", ORIGIN)
                         .header("Access-Control-Request-Method", "POST")
                         .header("Access-Control-Request-Headers", "Idempotency-Key, Content-Type, Authorization, X-XSRF-TOKEN"))
@@ -166,9 +166,9 @@ class TripGenerationControllerTest {
 
     @Test
     void authenticationAndCsrfAreRequiredBeforeService() throws Exception {
-        mvc.perform(post("/trips").contentType("application/json").content(BODY))
+        mvc.perform(post("/trips/88/generate").contentType("application/json").content(BODY))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(post("/trips").header("Authorization", "Bearer test-access")
+        mvc.perform(post("/trips/88/generate").header("Authorization", "Bearer test-access")
                         .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType("application/json").content(BODY))
                 .andExpect(status().isForbidden());

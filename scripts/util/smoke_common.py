@@ -32,7 +32,8 @@ class SmokeClient:
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
         )
 
-    def call(self, path, body=None, token=None, expected=200, idempotency_key=None):
+    def call(self, path, body=None, token=None, expected=200, idempotency_key=None,
+             method=None):
         headers = {"Origin": "http://localhost:3000", "Accept": "application/json"}
         if body is not None:
             headers.update({
@@ -40,7 +41,7 @@ class SmokeClient:
                 "X-Requested-With": "XMLHttpRequest",
                 "X-XSRF-TOKEN": self.call("/auth/csrf")["data"]["token"],
             })
-            if path == "/trips":
+            if path.endswith("/generate"):
                 headers["Idempotency-Key"] = idempotency_key or str(uuid.uuid4())
         if token:
             headers["Authorization"] = "Bearer " + token
@@ -48,6 +49,7 @@ class SmokeClient:
             self.base + path,
             data=None if body is None else json.dumps(body).encode("utf-8"),
             headers=headers,
+            method=method,
         )
         try:
             response = self.opener.open(request, timeout=90)
@@ -100,16 +102,21 @@ class SmokeClient:
     def generate_and_verify(self, token, request, idempotency_key=None,
                             check_conflict=False):
         request_id = idempotency_key or str(uuid.uuid4())
-        response = self.call("/trips", request, token=token, expected=201,
+        created = self.call("/trips", {"name": request["name"], "tripDays": []},
+                            token=token, expected=201)
+        trip_id = created["data"]["tripId"]
+        path = f"/trips/{trip_id}/generate"
+        response = self.call(path, request, token=token, expected=200,
                              idempotency_key=request_id)
         data = response.get("data")
         if response.get("message") != "success" or not isinstance(data, dict):
-            raise AssertionError("/trips returned an invalid success response")
+            raise AssertionError("/trips/{id}/generate returned an invalid success response")
         if (not isinstance(data.get("tripId"), int) or data.get("tripId") < 1
                 or data.get("name") != request["name"]
                 or data.get("startDate") != request["startDate"]
                 or data.get("status") != "Planning"
-                or data.get("dayCount") != request["dayCount"]):
+                or data.get("dayCount") != request["dayCount"]
+                or data.get("tripId") != trip_id):
             raise AssertionError("/trips returned incorrect trip metadata")
         days = data.get("tripDays")
         if not isinstance(days, list) or len(days) != request["dayCount"]:
@@ -134,14 +141,14 @@ class SmokeClient:
                     raise AssertionError("Generated POI is incomplete or duplicated")
                 seen.add(place_id)
 
-        replay = self.call("/trips", request, token=token, expected=201,
+        replay = self.call(path, request, token=token, expected=200,
                            idempotency_key=request_id)
         if replay != response or replay.get("data", {}).get("tripId") != data["tripId"]:
             raise AssertionError("Same Idempotency-Key and body did not replay the original trip")
 
         if check_conflict:
             changed = {**request, "name": request["name"] + " changed"}
-            conflict = self.call("/trips", changed, token=token, expected=409,
+            conflict = self.call(path, changed, token=token, expected=409,
                                  idempotency_key=request_id)
             error = conflict.get("error")
             if not isinstance(error, dict) or error.get("code") != "IDEMPOTENCY_KEY_REUSED":

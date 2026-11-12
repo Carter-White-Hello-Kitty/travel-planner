@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS trips
     start_date DATE NULL
 );
 
+-- Existing local volumes may still have the removed revision column.
+SET @trip_revision_exists = (SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'trips' AND column_name = 'revision');
+SET @trip_revision_sql = IF(@trip_revision_exists = 1,
+    'ALTER TABLE trips DROP COLUMN revision', 'SELECT 1');
+PREPARE trip_revision_stmt FROM @trip_revision_sql;
+EXECUTE trip_revision_stmt;
+DEALLOCATE PREPARE trip_revision_stmt;
+
 CREATE TABLE IF NOT EXISTS trip_days
 (
     id      BIGINT PRIMARY KEY AUTO_INCREMENT,

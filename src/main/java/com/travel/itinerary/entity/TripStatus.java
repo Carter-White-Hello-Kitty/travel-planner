@@ -45,12 +45,9 @@ public enum TripStatus {
         };
     }
 
-    /**
-     * Whether the trip's days and POIs may be edited. Ongoing trips stay editable so travelers can
-     * adjust plans mid-trip, but only POIs that are still {@link TripPoiStatus#isEditable()}.
-     */
+    /** Only a Planning trip may change its route in the first version. */
     public boolean isEditable() {
-        return this == PLANNING || this == ONGOING;
+        return this == PLANNING;
     }
 
     /** A travel post may only be published for a finished trip. */

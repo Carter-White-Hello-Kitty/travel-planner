@@ -22,6 +22,7 @@ import com.travel.common.ApiError;
 import com.travel.itinerary.service.TripService;
 import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
+import com.travel.itinerary.vo.SaveTripRequest;
 import com.travel.poisearch.client.GooglePlacesClient;
 import com.travel.poisearch.service.PoiSearchService;
 import com.travel.poisearch.vo.PoiVO;
@@ -63,6 +64,7 @@ class TripGenerationIdempotencyIntegrationTest {
 
     private final List<String> redisKeys = new ArrayList<>();
     private Long userId;
+    private Long draftId;
 
     @BeforeEach
     void createUser() {
@@ -70,6 +72,7 @@ class TripGenerationIdempotencyIntegrationTest {
         user.setEmail("trip-idempotency-" + UUID.randomUUID() + "@example.com");
         user.setPasswordHash("unused-in-service-test");
         userId = users.save(user).getId();
+        draftId = service.save(identity(), null, null, true).tripId();
     }
 
     @AfterEach
@@ -96,7 +99,7 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place));
         String requestId = requestId();
 
-        TripService.GenerationOutcome outcome = service.generate(identity(), requestId, request("City trip"));
+        TripService.GenerationOutcome outcome = generate(identity(), requestId, request("City trip"));
 
         assertFalse(outcome.processing());
         GeneratedTrip trip = outcome.trip();
@@ -115,10 +118,10 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place));
         String requestId = requestId();
         GenerateTripRequest body = request("City trip");
-        TripService.GenerationOutcome first = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome first = generate(identity(), requestId, body);
         clearInvocations(google, search);
 
-        TripService.GenerationOutcome replay = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome replay = generate(identity(), requestId, body);
 
         assertFalse(replay.processing());
         assertEquals(first.trip(), replay.trip());
@@ -128,14 +131,43 @@ class TripGenerationIdempotencyIntegrationTest {
     }
 
     @Test
+    void laterEditAndRegenerationKeepOneTrip() {
+        PoiVO firstPlace = place();
+        when(search.search(any())).thenReturn(List.of(firstPlace));
+        String firstId = requestId();
+        GenerateTripRequest firstBody = request("First plan");
+        GeneratedTrip first = generate(identity(), firstId, firstBody).trip();
+        assertEquals(draftId, first.tripId());
+        service.save(identity(), draftId,
+                new SaveTripRequest("Manual edit", LocalDate.of(2026, 12, 1),
+                        List.of(new SaveTripRequest.Day(List.of("manual-place")))), false);
+
+        String secondId = requestId();
+        GenerateTripRequest secondBody = new GenerateTripRequest("Second plan",
+                LocalDate.of(2026, 12, 1), 1,
+                new GenerateTripRequest.SearchArea(40.758, -73.9855, 15_000),
+                new GenerateTripRequest.Constraints(2, List.of()), null);
+        GeneratedTrip second = generate(identity(), secondId, secondBody).trip();
+        assertEquals(first.tripId(), second.tripId());
+        assertEquals(1L, tripCount());
+        assertEquals(2L, requestCount());
+
+        service.delete(identity(), draftId);
+        assertEquals(0L, tripCount());
+        assertEquals(0L, requestCount());
+        assertEquals(Boolean.FALSE, redis.hasKey(key(firstId)));
+        assertEquals(Boolean.FALSE, redis.hasKey(key(secondId)));
+    }
+
+    @Test
     void reusedRequestIdWithDifferentBodyIsConflict() {
         when(search.search(any())).thenReturn(List.of(place()));
         String requestId = requestId();
-        service.generate(identity(), requestId, request("Original name"));
+        generate(identity(), requestId, request("Original name"));
         clearInvocations(google, search);
 
         ApiError error = assertThrows(ApiError.class,
-                () -> service.generate(identity(), requestId, request("Different name")));
+                () -> generate(identity(), requestId, request("Different name")));
 
         assertEquals(HttpStatus.CONFLICT, error.status);
         assertEquals("IDEMPOTENCY_KEY_REUSED", error.code);
@@ -148,15 +180,15 @@ class TripGenerationIdempotencyIntegrationTest {
         GenerateTripRequest body = request("City trip");
 
         ApiError missing = assertThrows(ApiError.class,
-                () -> service.generate(identity(), null, body));
+                () -> generate(identity(), null, body));
         ApiError malformed = assertThrows(ApiError.class,
-                () -> service.generate(identity(), "not-a-uuid", body));
+                () -> generate(identity(), "not-a-uuid", body));
 
         assertEquals(HttpStatus.BAD_REQUEST, missing.status);
         assertEquals(HttpStatus.BAD_REQUEST, malformed.status);
         assertEquals("INVALID_REQUEST", missing.code);
         assertEquals("INVALID_REQUEST", malformed.code);
-        assertEquals(0L, tripCount());
+        assertEquals(1L, tripCount());
         assertEquals(0L, requestCount());
         assertTrue(redis.keys("trip:generate:" + userId + ":*").isEmpty());
         verifyNoInteractions(google, search);
@@ -166,12 +198,12 @@ class TripGenerationIdempotencyIntegrationTest {
     void mysqlRecordRejectsChangedBodyAfterRedisCacheWasDeleted() {
         when(search.search(any())).thenReturn(List.of(place()));
         String requestId = requestId();
-        service.generate(identity(), requestId, request("Original name"));
+        generate(identity(), requestId, request("Original name"));
         redis.delete(key(requestId));
         clearInvocations(google, search);
 
         ApiError error = assertThrows(ApiError.class,
-                () -> service.generate(identity(), requestId, request("Different name")));
+                () -> generate(identity(), requestId, request("Different name")));
 
         assertEquals(HttpStatus.CONFLICT, error.status);
         assertEquals("IDEMPOTENCY_KEY_REUSED", error.code);
@@ -185,7 +217,7 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place()));
         String completedId = requestId();
         GenerateTripRequest body = request("City trip");
-        service.generate(identity(), completedId, body);
+        generate(identity(), completedId, body);
         String hash = db.queryForObject(
                 "SELECT request_hash FROM trip_generation_requests WHERE user_id = ? AND request_id = ?",
                 String.class, userId, completedId);
@@ -196,7 +228,7 @@ class TripGenerationIdempotencyIntegrationTest {
                 Duration.ofMinutes(2));
         clearInvocations(google, search);
 
-        TripService.GenerationOutcome outcome = service.generate(identity(), processingId, body);
+        TripService.GenerationOutcome outcome = generate(identity(), processingId, body);
 
         assertTrue(outcome.processing());
         assertEquals(1L, tripCount());
@@ -210,7 +242,7 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place));
         String requestId = requestId();
         GenerateTripRequest body = request("City trip");
-        TripService.GenerationOutcome first = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome first = generate(identity(), requestId, body);
         String hash = db.queryForObject(
                 "SELECT request_hash FROM trip_generation_requests WHERE user_id = ? AND request_id = ?",
                 String.class, userId, requestId);
@@ -221,7 +253,7 @@ class TripGenerationIdempotencyIntegrationTest {
         clearInvocations(google, search);
         when(google.details(place.googlePlaceId())).thenReturn(place);
 
-        TripService.GenerationOutcome recovered = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome recovered = generate(identity(), requestId, body);
 
         assertFalse(recovered.processing());
         assertEquals(first.trip(), recovered.trip());
@@ -247,12 +279,12 @@ class TripGenerationIdempotencyIntegrationTest {
         GenerateTripRequest body = request("City trip");
         ExecutorService worker = Executors.newSingleThreadExecutor();
         Future<TripService.GenerationOutcome> first = worker.submit(
-                () -> service.generate(identity(), requestId, body));
+                () -> generate(identity(), requestId, body));
         try {
             assertTrue(searchStarted.await(10, TimeUnit.SECONDS));
-            TripService.GenerationOutcome retry = service.generate(identity(), requestId, body);
+            TripService.GenerationOutcome retry = generate(identity(), requestId, body);
             assertTrue(retry.processing());
-            assertEquals(0L, tripCount());
+            assertEquals(1L, tripCount());
         } finally {
             finishSearch.countDown();
             worker.shutdown();
@@ -293,12 +325,12 @@ class TripGenerationIdempotencyIntegrationTest {
         ExecutorService workers = Executors.newFixedThreadPool(2);
         try {
             Future<TripService.GenerationOutcome> first = workers.submit(
-                    () -> service.generate(identity(), requestId, body));
+                    () -> generate(identity(), requestId, body));
             assertTrue(firstSearching.await(10, TimeUnit.SECONDS));
             // Simulate expiry/loss of the first PROCESSING lease before its MySQL transaction commits.
             redis.delete(key(requestId));
             Future<TripService.GenerationOutcome> second = workers.submit(
-                    () -> service.generate(identity(), requestId, body));
+                    () -> generate(identity(), requestId, body));
             assertTrue(secondSearching.await(10, TimeUnit.SECONDS));
 
             finishFirst.countDown();
@@ -327,12 +359,12 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place));
         String requestId = requestId();
         GenerateTripRequest body = request("City trip");
-        TripService.GenerationOutcome first = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome first = generate(identity(), requestId, body);
         redis.delete(key(requestId));
         clearInvocations(google, search);
         when(google.details(place.googlePlaceId())).thenReturn(place);
 
-        TripService.GenerationOutcome recovered = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome recovered = generate(identity(), requestId, body);
 
         assertFalse(recovered.processing());
         assertEquals(first.trip(), recovered.trip());
@@ -350,15 +382,15 @@ class TripGenerationIdempotencyIntegrationTest {
         GenerateTripRequest body = request("Failing trip");
 
         assertThrows(RuntimeException.class,
-                () -> service.generate(identity(), requestId, body));
+                () -> generate(identity(), requestId, body));
 
-        assertEquals(0L, tripCount());
+        assertEquals(1L, tripCount());
         assertEquals(0L, requestCount());
         assertEquals(Boolean.FALSE, redis.hasKey(key(requestId)));
 
         reset(search);
         when(search.search(any())).thenReturn(List.of(place()));
-        TripService.GenerationOutcome retry = service.generate(identity(), requestId, body);
+        TripService.GenerationOutcome retry = generate(identity(), requestId, body);
         assertFalse(retry.processing());
         assertEquals(1L, tripCount());
         assertEquals(1L, requestCount());
@@ -393,14 +425,14 @@ class TripGenerationIdempotencyIntegrationTest {
         ExecutorService workers = Executors.newFixedThreadPool(2);
         try {
             Future<TripService.GenerationOutcome> first = workers.submit(
-                    () -> service.generate(identity(), requestId, body));
+                    () -> generate(identity(), requestId, body));
             assertTrue(firstSearching.await(10, TimeUnit.SECONDS));
             String oldClaim = redis.opsForValue().get(key(requestId));
             assertNotNull(oldClaim);
             // Simulate expiry of A's claim before B acquires the same key.
             redis.delete(key(requestId));
             Future<TripService.GenerationOutcome> second = workers.submit(
-                    () -> service.generate(identity(), requestId, body));
+                    () -> generate(identity(), requestId, body));
             assertTrue(secondSearching.await(10, TimeUnit.SECONDS));
             String newClaim = redis.opsForValue().get(key(requestId));
             assertNotNull(newClaim);
@@ -409,7 +441,7 @@ class TripGenerationIdempotencyIntegrationTest {
             failFirst.countDown();
             assertThrows(ExecutionException.class, () -> first.get(10, TimeUnit.SECONDS));
             assertEquals(newClaim, redis.opsForValue().get(key(requestId)));
-            assertTrue(service.generate(identity(), requestId, body).processing());
+            assertTrue(generate(identity(), requestId, body).processing());
             assertEquals(2, searches.get());
 
             finishSecond.countDown();
@@ -428,21 +460,27 @@ class TripGenerationIdempotencyIntegrationTest {
         when(search.search(any())).thenReturn(List.of(place()));
         GenerateTripRequest body = request("City trip");
         for (int i = 0; i < 5; i++) {
-            TripService.GenerationOutcome outcome = service.generate(identity(), requestId(), body);
+            if (i > 0) draftId = service.save(identity(), null, null, true).tripId();
+            TripService.GenerationOutcome outcome = generate(identity(), requestId(), body);
             assertFalse(outcome.processing());
         }
+        draftId = service.save(identity(), null, null, true).tripId();
         String rejectedId = requestId();
 
         ApiError error = assertThrows(ApiError.class,
-                () -> service.generate(identity(), rejectedId, body));
+                () -> generate(identity(), rejectedId, body));
 
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, error.status);
         assertEquals("RATE_LIMITED", error.code);
-        assertEquals(5L, tripCount());
+        assertEquals(6L, tripCount());
         assertEquals(5L, requestCount());
         assertEquals(Boolean.FALSE, redis.hasKey(key(rejectedId)));
         verify(search, times(5)).search(any());
         verifyNoInteractions(google);
+    }
+
+    private TripService.GenerationOutcome generate(TokenService.Identity caller, String id, GenerateTripRequest body) {
+        return service.generate(caller, draftId, id, body);
     }
 
     private TokenService.Identity identity() {

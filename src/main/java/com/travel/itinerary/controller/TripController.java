@@ -7,6 +7,8 @@ import com.travel.itinerary.vo.GenerateTripRequest;
 import com.travel.itinerary.vo.GeneratedTrip;
 import com.travel.itinerary.vo.TripCheckInResult;
 import com.travel.itinerary.vo.TripSummary;
+import com.travel.itinerary.vo.SaveTripRequest;
+import com.travel.itinerary.vo.SavedTripResult;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,16 +35,32 @@ public class TripController {
     }
 
     @PostMapping
+    public ResponseEntity<Result<SavedTripResult>> create(
+            @AuthenticationPrincipal TokenService.Identity identity,
+            @Valid @RequestBody(required = false) SaveTripRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Result.success(tripService.save(identity, null, request, true)));
+    }
+
+    @PutMapping("/{id}")
+    public Result<SavedTripResult> save(
+            @AuthenticationPrincipal TokenService.Identity identity, @PathVariable Long id,
+            @Valid @RequestBody SaveTripRequest request) {
+        return Result.success(tripService.save(identity, id, request, false));
+    }
+
+    @PostMapping("/{id}/generate")
     public ResponseEntity<Result<GeneratedTrip>> generate(
             @AuthenticationPrincipal TokenService.Identity identity,
+            @PathVariable Long id,
             @RequestHeader(value = "Idempotency-Key", required = false) String requestId,
             @Valid @RequestBody GenerateTripRequest request) {
-        TripService.GenerationOutcome outcome = tripService.generate(identity, requestId, request);
+        TripService.GenerationOutcome outcome = tripService.generate(identity, id, requestId, request);
         if (outcome.processing()) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).header("Retry-After", "2")
                     .body(Result.success("Trip generation in progress", null));
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(Result.success(outcome.trip()));
+        return ResponseEntity.ok(Result.success(outcome.trip()));
     }
 
     @GetMapping

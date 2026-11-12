@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.travel.auth.repository.UserRepository;
 import com.travel.auth.config.Secrets;
@@ -99,7 +100,8 @@ class TripLifecycleIntegrationTest {
 
     @Test
     void startMovesPlanningTripToOngoing() throws Exception {
-        Long id = trip(OWNER, TripStatus.PLANNING);
+        Long id = tripWithPois(OWNER, TripStatus.PLANNING,
+                TripPoiStatus.PLANNED, TripPoiStatus.PLANNED).getId();
 
         MockHttpServletResponse r = call("/trips/" + id + "/start", ownerToken);
 
@@ -108,6 +110,57 @@ class TripLifecycleIntegrationTest {
         assertEquals("success", body.get("message").asText());
         assertTrue(body.get("data").isNull());
         assertEquals("Ongoing", statusOf(id));
+    }
+
+    @Test
+    void createDraftThenAutoSaveReplacesItsPlan() throws Exception {
+        MockHttpServletResponse created = mvc.perform(withCsrf(post("/trips"))
+                .header("Authorization", "Bearer " + ownerToken)).andReturn().getResponse();
+        assertEquals(201, created.getStatus(), created.getContentAsString());
+        JsonNode draft = json.readTree(created.getContentAsString()).get("data");
+        Long id = draft.get("tripId").asLong();
+        assertEquals("Planning", statusOf(id));
+        assertEquals(0, json.readTree(detail(id, ownerToken).getContentAsString())
+                .get("data").get("tripDays").size());
+
+        String first = """
+                {"name":"Manhattan","startDate":"2026-12-01",
+                 "tripDays":[{"tripPois":["place-a","place-b"]},
+                             {"tripPois":["place-c"]}]}
+                """;
+        MockHttpServletResponse saved = saveTrip(id, first, ownerToken);
+        assertEquals(200, saved.getStatus(), saved.getContentAsString());
+        assertEquals(6, rowsFor(id));
+        stubPlaces();
+        JsonNode details = json.readTree(detail(id, ownerToken).getContentAsString()).get("data");
+        assertEquals("Manhattan", details.get("name").asText());
+        assertEquals("place-b", details.get("tripDays").get(0).get("tripPois")
+                .get(1).get("googlePlaceId").asText());
+
+        String second = """
+                {"name":"Updated","startDate":"2026-12-02",
+                 "tripDays":[{"tripPois":["place-c"]}]}
+                """;
+        assertEquals(200, saveTrip(id, second, ownerToken).getStatus());
+        assertEquals(3, rowsFor(id));
+        assertEquals(200, saveTrip(id, first, ownerToken).getStatus());
+        assertEquals(6, rowsFor(id));
+
+        assertEquals(200, call("/trips/" + id + "/start", ownerToken).getStatus());
+        assertError(saveTrip(id, second, ownerToken), 409, "INVALID_TRIP_STATUS");
+    }
+
+    @Test
+    void emptyDraftCannotStartAndOtherUserCannotEdit() throws Exception {
+        MockHttpServletResponse created = mvc.perform(withCsrf(post("/trips"))
+                .header("Authorization", "Bearer " + ownerToken)).andReturn().getResponse();
+        Long id = json.readTree(created.getContentAsString()).get("data").get("tripId").asLong();
+        assertError(call("/trips/" + id + "/start", ownerToken), 409, "INCOMPLETE_TRIP");
+        String otherToken = registerAndLogin(OTHER);
+        assertError(saveTrip(id, """
+                {"name":"Stolen","tripDays":[]}
+                """, otherToken), 403, "FORBIDDEN");
+        assertEquals("Planning", statusOf(id));
     }
 
     @Test
@@ -393,7 +446,8 @@ class TripLifecycleIntegrationTest {
 
     @Test
     void generationRejectsInvalidRequestBeforeSaving() throws Exception {
-        MockHttpServletResponse response = mvc.perform(withCsrf(post("/trips"))
+        Long draftId = trip(OWNER, TripStatus.PLANNING);
+        MockHttpServletResponse response = mvc.perform(withCsrf(post("/trips/" + draftId + "/generate"))
                 .header("Authorization", "Bearer " + ownerToken)
                 .contentType("application/json")
                 .content("""
@@ -404,7 +458,7 @@ class TripLifecycleIntegrationTest {
 
         assertError(response, 400, "INVALID_REQUEST");
         Long ownerId = userRepository.findByEmail(OWNER).orElseThrow().getId();
-        assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM trips WHERE user_id = ?", Long.class, ownerId));
+        assertEquals(1L, db.queryForObject("SELECT COUNT(*) FROM trips WHERE user_id = ?", Long.class, ownerId));
     }
 
     // ---- helpers ----
@@ -437,6 +491,12 @@ class TripLifecycleIntegrationTest {
         MockHttpServletRequestBuilder request = withCsrf(MockMvcRequestBuilders.delete("/trips/" + tripId));
         if (accessToken != null) request.header("Authorization", "Bearer " + accessToken);
         return mvc.perform(request).andReturn().getResponse();
+    }
+
+    MockHttpServletResponse saveTrip(Long tripId, String body, String accessToken) throws Exception {
+        return mvc.perform(withCsrf(put("/trips/" + tripId))
+                .header("Authorization", "Bearer " + accessToken)
+                .contentType("application/json").content(body)).andReturn().getResponse();
     }
 
     String poiStatusOf(Long tripPoiId) {
